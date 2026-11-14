@@ -1,0 +1,19 @@
+{
+  "name": "r6t5-drive-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "R6T5 Drive 后端（Express + SQLite 元数据 + 本地数据卷）",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": ">= 20"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.1",
+    "better-sqlite3": "^11.8.1"
+  }
+}

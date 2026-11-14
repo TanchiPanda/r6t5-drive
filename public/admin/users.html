@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用户 · R6T5 Drive</title>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body data-page="users">
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><div>R6T5 Drive<small>管理控制台</small></div></div>
+    <nav class="nav">
+      <div class="nav-group">运行</div>
+      <a href="/admin/home.html"><span class="ic">▤</span>概览</a>
+      <a href="/admin/users.html" class="active"><span class="ic">◉</span>用户</a>
+      <a href="/admin/storage.html"><span class="ic">▣</span>存储策略</a>
+      <a href="/admin/groups.html"><span class="ic">◫</span>用户组</a>
+      <div class="nav-group">治理</div>
+      <a href="/admin/shares.html"><span class="ic">⇪</span>分享</a>
+      <a href="/admin/trash.html"><span class="ic">▥</span>回收站</a>
+      <a href="/admin/audit.html"><span class="ic">☰</span>审计</a>
+      <div class="nav-group">系统</div>
+      <a href="/admin/settings.html"><span class="ic">⚙</span>站点设置</a>
+    </nav>
+    <div class="side-foot">
+      <div id="admin-identity" class="faint">未登录</div>
+    </div>
+  </aside>
+  <div>
+    <div class="topbar">
+      <div class="page-title small muted">用户</div>
+      <div class="spacer"></div>
+      <div id="admin-chip" class="admin-chip"></div>
+      <button class="btn icon ghost" id="theme-btn" type="button" title="切换明暗主题">☾</button>
+      <a class="btn sm" href="/files" target="_blank" rel="noopener">打开前台</a>
+      <button class="btn sm ghost" id="logout-btn" type="button">退出</button>
+    </div>
+    <main class="main">
+      <div class="content">
+        <div class="page-head">
+          <div><h1>用户</h1><p class="sub">身份数据源、用户分组与禁用管理</p></div>
+        </div>
+        <div class="stack">
+          <div id="page-alert" class="page-alert hide"></div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Supabase 配置</h3>
+              <span class="hint">身份认证数据源，密钥仅服务端保存</span>
+              <div class="actions">
+                <button class="btn sm" id="btn-sb-test" type="button">连通性自检</button>
+              </div>
+            </div>
+            <div id="sb-alert" class="page-alert hide"></div>
+            <div id="sb-test-result" class="page-alert hide"></div>
+            <div class="grid g2">
+              <div>
+                <div id="sb-info"></div>
+              </div>
+              <form id="sb-form" novalidate>
+                <div class="field">
+                  <label for="sb-url">Supabase URL</label>
+                  <input class="input" id="sb-url" name="url" type="text" placeholder="https://xxx.supabase.co" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="sb-anon">anon Key</label>
+                  <input class="input" id="sb-anon" name="anonKey" type="password" placeholder="anon public key" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="sb-service">service Key</label>
+                  <input class="input" id="sb-service" name="serviceKey" type="password" placeholder="service role key" autocomplete="off">
+                  <span class="login-err" id="sb-err"></span>
+                </div>
+                <div class="row">
+                  <button class="btn primary" type="submit">保存配置</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>用户列表</h3>
+              <span class="hint" id="user-total">—</span>
+              <div class="actions">
+                <button class="btn" id="btn-sync" type="button">从 Supabase 同步用户</button>
+              </div>
+            </div>
+            <div class="toolbar">
+              <input class="input search" id="user-search" type="search" placeholder="搜索邮箱…">
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr><th>邮箱</th><th>用户组</th><th class="num">已用空间</th><th class="num">文件数</th><th>最近登录</th><th>禁用</th><th>状态</th></tr>
+                </thead>
+                <tbody id="user-rows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/admin.js"></script>
+</body>
+</html>

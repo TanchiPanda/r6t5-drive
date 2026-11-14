@@ -1,0 +1,17 @@
+# 构建镜像时排除：本地数据、依赖、暂存产物与版本库
+data/
+node_modules/
+.build/
+shots/
+*.db
+*.db-shm
+*.db-wal
+.git/
+.gitignore
+.env
+.env.*
+Dockerfile
+docker-compose.yml
+.dockerignore
+*.log
+.DS_Store

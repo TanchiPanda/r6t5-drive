@@ -1,0 +1,57 @@
+import app from './app.js';
+import { db, migrate, getSetting, setSetting } from './db.js';
+import { ENV, DEFAULTS } from './config.js';
+import { hashPassword, randomPassword } from './lib/session.js';
+import { nowIso, genId } from './lib/format.js';
+
+migrate();
+
+// 首次启动播种默认用户组
+function seedDefaultGroup() {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM groups').get().n;
+  if (count > 0) return;
+  db.prepare(
+    `INSERT INTO groups (id, name, spaceLimitBytes, maxFileSizeBytes, traffic7dLimitBytes, isDefault, createdAt)
+     VALUES (?, ?, ?, ?, ?, 1, ?)`
+  ).run(
+    genId('g'), '标准用户',
+    Number(DEFAULTS.spaceLimitBytes), Number(DEFAULTS.maxFileSizeBytes), Number(DEFAULTS.traffic7dLimitBytes),
+    nowIso()
+  );
+}
+
+// 首次启动引导管理员密码：环境变量优先，否则随机生成并只打印一次
+function bootstrapAdmin() {
+  const existing = getSetting('admin_password_hash');
+  if (existing) return;
+  let password;
+  let source;
+  if (ENV.ADMIN_PASSWORD) {
+    password = ENV.ADMIN_PASSWORD;
+    source = 'env';
+  } else {
+    password = randomPassword(12);
+    source = 'generated';
+  }
+  setSetting('admin_password_hash', hashPassword(password));
+  setSetting('admin_password_source', source);
+  if (source === 'generated') {
+    const line = '='.repeat(60);
+    console.log(`\n${line}`);
+    console.log('  R6T5 Drive 首次启动');
+    console.log('  未检测到 ADMIN_PASSWORD，已随机生成管理员密码（仅显示这一次）：');
+    console.log(`  管理员密码：${password}`);
+    console.log('  登录入口：/admin/login');
+    console.log(`${line}\n`);
+  } else {
+    console.log('[boot] 管理员密码来自环境变量 ADMIN_PASSWORD。');
+  }
+}
+
+seedDefaultGroup();
+bootstrapAdmin();
+
+app.listen(ENV.PORT, '0.0.0.0', () => {
+  console.log(`[boot] R6T5 Drive 已启动，端口 ${ENV.PORT}`);
+  console.log(`[boot] DB=${ENV.DB_PATH}  STORAGE_ROOT=${ENV.STORAGE_ROOT}  DEV_AUTH=${ENV.DEV_AUTH ? 'on' : 'off'}`);
+});

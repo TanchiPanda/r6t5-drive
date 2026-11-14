@@ -1,0 +1,22 @@
+# 依赖
+node_modules/
+
+# 运行期数据：SQLite 库、上传文件、侧车下载目录
+data/
+data/**/*.db
+data/**/*.db-shm
+data/**/*.db-wal
+data/volume/**
+
+# 环境变量（含密钥，禁止入库）
+.env
+
+# 并行交付暂存目录（各子任务镜像到根目录后不参与版本库）
+.build/
+
+# 截图与日志
+shots/
+*.log
+
+# 系统垃圾
+.DS_Store

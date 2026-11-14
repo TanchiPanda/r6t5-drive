@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>管理员登录 · R6T5 Drive</title>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body data-page="login">
+  <div class="login-topbar">
+    <button class="btn icon ghost" id="theme-btn" type="button" title="切换明暗主题">☾</button>
+  </div>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand"><span class="dot"></span><div>R6T5 Drive<small>管理控制台</small></div></div>
+      <p class="sub">请输入管理密码进入后台。管理密码由服务端首次启动时生成并打印在容器日志中。</p>
+      <div class="card">
+        <form id="login-form" novalidate>
+          <div class="field">
+            <label for="login-password">管理密码</label>
+            <input class="input" id="login-password" name="password" type="password" autocomplete="current-password" placeholder="请输入管理密码" autofocus>
+            <span class="login-err" id="login-err"></span>
+          </div>
+          <button class="btn primary block lg" type="submit">登录后台</button>
+        </form>
+      </div>
+      <p class="faint small mt4 center">普通用户请前往前台登录，此处仅对管理员开放。</p>
+    </div>
+  </div>
+  <div class="toasts"></div>
+  <script src="/assets/api.js"></script>
+  <script src="/assets/admin.js"></script>
+</body>
+</html>

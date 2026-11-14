@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文件 · R6T5 Drive</title>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body data-page="files">
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><div>R6T5 Drive<small>个人空间</small></div></div>
+    <nav class="nav">
+      <a href="/files" class="active"><span class="ic">▤</span>文件</a>
+      <a href="/account"><span class="ic">◫</span>我的容量</a>
+      <a href="#" id="nav-trash"><span class="ic">♻</span>回收站</a>
+      <a href="#" class="disabled" id="nav-share" title="分享将在 P2 开放"><span class="ic">↗</span>分享</a>
+    </nav>
+    <div class="side-foot">
+      <div id="whoami" class="faint">未登录</div>
+      <a href="#" id="logout-link" class="faint">退出登录</a>
+    </div>
+  </aside>
+
+  <div class="main-col">
+    <div class="topbar">
+      <div class="page-title small muted">文件</div>
+      <div class="spacer"></div>
+      <button class="btn icon ghost" id="theme-btn" type="button">☾</button>
+      <button class="btn sm ghost" id="logout-btn" type="button">退出</button>
+    </div>
+
+    <main class="main">
+      <div class="content">
+        <div class="card flat toolbar">
+          <div class="row tight">
+            <nav class="crumbs" id="crumbs" aria-label="目录"></nav>
+            <div class="spacer"></div>
+            <div class="pillnav" id="view-toggle">
+              <button type="button" data-view="list" class="active">列表</button>
+              <button type="button" data-view="grid">网格</button>
+            </div>
+          </div>
+          <div class="row tight mt2">
+            <button class="btn primary" id="upload-btn" type="button">↑ 上传</button>
+            <button class="btn" id="mkdir-btn" type="button">＋ 新建文件夹</button>
+            <div class="flex1"></div>
+            <div class="searchbox">
+              <input class="input" id="search-input" type="search" placeholder="搜索当前空间…" autocomplete="off">
+              <button class="btn sm ghost hide" id="search-clear" type="button" title="清空搜索">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="upload-queue" class="stack hide"></div>
+
+        <div id="dropzone" class="dz">
+          <div id="file-area" class="dz-inner"></div>
+        </div>
+
+        <div class="card flat mt4" id="quota-panel"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 新建文件夹 -->
+<div class="modal-mask" id="m-mkdir">
+  <div class="modal">
+    <div class="modal-head"><h3>新建文件夹</h3></div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="mkdir-name">文件夹名称</label>
+        <input class="input" id="mkdir-name" type="text" maxlength="200" placeholder="例如：项目资料">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="mkdir-cancel" type="button">取消</button>
+      <button class="btn primary" id="mkdir-ok" type="button">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 重命名 -->
+<div class="modal-mask" id="m-rename">
+  <div class="modal">
+    <div class="modal-head"><h3 id="rename-title">重命名</h3></div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="rename-name">新名称</label>
+        <input class="input" id="rename-name" type="text" maxlength="200">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="rename-cancel" type="button">取消</button>
+      <button class="btn primary" id="rename-ok" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 移动 -->
+<div class="modal-mask" id="m-move">
+  <div class="modal">
+    <div class="modal-head"><h3 id="move-title">移动</h3></div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="move-target-dir">选择目标文件夹</label>
+        <select class="select" id="move-target-dir"></select>
+      </div>
+      <div class="field">
+        <label for="move-target-path">或填写目标路径</label>
+        <input class="input" id="move-target-path" type="text" placeholder="例如：alice@example.com/inbox">
+        <span class="help">路径以本人邮箱为根，留空则使用上方选择的文件夹。</span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="move-cancel" type="button">取消</button>
+      <button class="btn primary" id="move-ok" type="button">移动到此处</button>
+    </div>
+  </div>
+</div>
+
+<!-- 删除确认 -->
+<div class="modal-mask" id="m-delete">
+  <div class="modal">
+    <div class="modal-head"><h3>删除</h3></div>
+    <div class="modal-body">
+      <div class="note warn"><span class="ico">!</span><div>将「<b id="delete-name"></b>」移入回收站？删除后可在回收站恢复，超过保留期将被彻底清除。</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="delete-cancel" type="button">取消</button>
+      <button class="btn danger" id="delete-ok" type="button">移入回收站</button>
+    </div>
+  </div>
+</div>
+
+<!-- 回收站抽屉 -->
+<div class="drawer-mask" id="trash-mask"></div>
+<aside class="drawer" id="trash-drawer" aria-label="回收站">
+  <div class="drawer-head">
+    <h3>回收站</h3>
+    <div class="spacer"></div>
+    <button class="btn icon ghost" id="trash-close" type="button">✕</button>
+  </div>
+  <div class="drawer-body" id="trash-list"></div>
+</aside>
+
+<input type="file" id="file-input" multiple class="hide">
+<div class="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

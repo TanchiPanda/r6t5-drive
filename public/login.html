@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · R6T5 Drive</title>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body data-page="login">
+<div class="shell no-side">
+  <div class="login-wrap">
+    <div class="card login-card">
+      <div class="login-logo"><span class="dot"></span><div>R6T5 Drive<small>个人空间</small></div></div>
+      <h1 class="login-title">登录</h1>
+      <p class="login-sub">使用你的邮箱账号进入个人网盘</p>
+
+      <div class="note" id="setup-note" role="status">
+        <span class="ico">i</span>
+        <div class="note-body" id="setup-note-body">正在检查站点状态…</div>
+      </div>
+
+      <form id="login-form" novalidate>
+        <div class="field">
+          <label for="email">邮箱</label>
+          <input class="input" id="email" name="email" type="email" autocomplete="username" placeholder="you@example.com" required>
+        </div>
+        <div class="field">
+          <label for="password">密码</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="login-err" id="login-err"></div>
+        <div class="login-actions">
+          <button class="btn primary lg block" id="login-submit" type="submit">登录</button>
+          <a class="btn ghost hide" id="setup-link" href="/admin/login">进入管理后台</a>
+        </div>
+      </form>
+    </div>
+    <div class="login-foot">R6T5 Drive · 文件存在你自己的存储里</div>
+  </div>
+</div>
+<div class="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

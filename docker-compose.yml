@@ -1,0 +1,68 @@
+# R6T5 Drive · docker-compose 编排
+# 用法：cp .env.example .env 后按需填写，再 `docker compose up -d`
+# 构建上下文为仓库根目录（本文件镜像到仓库根后，路径以根目录为准）
+
+services:
+  drive:
+    build: .
+    image: r6t5-drive:latest
+    container_name: r6t5-drive
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/api/setup/status').then(r=>{if(r.status!==200)process.exit(1);}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 可选侧车（sidecar）：默认全部注释，需要时取消注释即可启用。
+  # 注意：启用前请自行确认侧车的数据卷挂载与端口不与本机其它服务冲突；
+  #       下列端口仅为默认示例，可按实际环境调整。
+  # ────────────────────────────────────────────────────────────────────────
+
+  # aria2 · 离线下载（P2 规划对接，当前版本仅作可选侧车预留）
+  # aria2:
+  #   image: p3terx/aria2-pro
+  #   container_name: r6t5-aria2
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6800:6800"   # RPC 端口
+  #     - "51413:51413" # BT 监听端口（TCP/UDP）
+  #   volumes:
+  #     - ./data/aria2:/config
+  #     - ./data/downloads:/downloads
+
+  # qBittorrent · BT 下载客户端（P2 规划对接）
+  # qbittorrent:
+  #   image: linuxserver/qbittorrent
+  #   container_name: r6t5-qbittorrent
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8081:8080"   # Web UI（主机 8081 → 容器 8080）
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=Asia/Shanghai
+  #   volumes:
+  #     - ./data/qbittorrent:/config
+  #     - ./data/downloads:/downloads
+
+  # ONLYOFFICE Document Server · 在线 Office 编辑（P2 才接入，当前版本不依赖）
+  # documentserver:
+  #   image: onlyoffice/documentserver:latest
+  #   container_name: r6t5-onlyoffice
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8082:80"
+  #   volumes:
+  #     - ./data/onlyoffice:/var/www/onlyoffice/Data
+  #   # 接入前需自行核对内存、数据库与许可要求；Drive 侧通过回调地址完成文档转换与编辑。

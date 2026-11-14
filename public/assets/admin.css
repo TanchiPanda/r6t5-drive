@@ -1,0 +1,116 @@
+/* R6T5 Drive · 管理端补充样式
+   只允许引用 tokens.css 中的 CSS 变量；不新增十六进制色值，不改字体栈。 */
+
+/* ---------- 页面级提示条（接口异常 / 初始化状态） ---------- */
+.page-alert { margin-bottom: var(--s4); }
+.page-alert .note { width: 100%; }
+
+/* ---------- 登录页 ---------- */
+.login-wrap{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  padding:var(--s6);
+}
+.login-card{width:min(420px,100%)}
+.login-brand{display:flex;align-items:center;gap:var(--s2);font-weight:700;font-size:var(--fs-lg);margin-bottom:var(--s2)}
+.login-brand .dot{width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 12px var(--acc);flex:none}
+.login-card .sub{color:var(--muted);font-size:var(--fs-sm);margin:0 0 var(--s5)}
+.login-topbar{position:fixed;top:0;right:0;display:flex;gap:var(--s2);padding:var(--s4)}
+.login-err{font-size:var(--fs-xs);color:var(--danger);min-height:18px;margin-top:var(--s1)}
+
+/* ---------- 工具条（搜索 / 筛选 / 操作按钮） ---------- */
+.toolbar{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s4)}
+.toolbar .search{flex:1;min-width:200px;max-width:320px}
+.toolbar .spacer{margin-left:auto}
+
+/* ---------- 键值展示 ---------- */
+.kv-line{display:flex;align-items:baseline;gap:var(--s3);font-size:var(--fs-sm);padding:7px 0;border-bottom:1px dashed var(--line)}
+.kv-line:last-child{border-bottom:0}
+.kv-line .k{color:var(--muted);flex:none;width:120px}
+.kv-line .v{font-family:var(--font-mono);font-size:var(--fs-xs);word-break:break-all;min-width:0}
+
+/* ---------- 概览：图表 ---------- */
+.chart-box{position:relative;width:100%;min-height:220px}
+.chart-box canvas{width:100%;height:220px;display:block}
+.chart-legend{display:flex;gap:var(--s4);flex-wrap:wrap;font-size:var(--fs-xs);color:var(--muted);margin-top:var(--s2)}
+.chart-legend .li{display:inline-flex;align-items:center;gap:6px}
+.chart-legend .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+/* 纯 CSS 环形占比 */
+.ring-wrap{display:flex;align-items:center;gap:var(--s5);flex-wrap:wrap}
+.ring{width:150px;height:150px;border-radius:50%;flex:none;position:relative}
+.ring::after{content:"";position:absolute;inset:26px;border-radius:50%;background:var(--panel)}
+.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1}
+.ring-center .v{font-size:var(--fs-lg);font-weight:700}
+.ring-center .k{font-size:var(--fs-xs);color:var(--muted)}
+.legend-list{display:flex;flex-direction:column;gap:var(--s2);min-width:0;flex:1}
+.legend-list .li{display:flex;align-items:center;gap:9px;font-size:var(--fs-sm)}
+.legend-list .sw{width:10px;height:10px;border-radius:3px;flex:none}
+.legend-list .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.legend-list .val{font-variant-numeric:tabular-nums;color:var(--muted);font-size:var(--fs-xs)}
+
+/* ---------- 概览：时间线 ---------- */
+.timeline{display:flex;flex-direction:column;gap:0}
+.timeline .tl-item{display:flex;gap:var(--s3);padding:var(--s3) 0;border-bottom:1px dashed var(--line)}
+.timeline .tl-item:last-child{border-bottom:0}
+.timeline .tl-dot{width:8px;height:8px;border-radius:50%;background:var(--acc);margin-top:8px;flex:none}
+.timeline .tl-body{flex:1;min-width:0}
+.timeline .tl-line{display:flex;align-items:baseline;gap:var(--s2);flex-wrap:wrap;font-size:var(--fs-sm)}
+.timeline .tl-email{font-weight:600}
+.timeline .tl-target{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.timeline .tl-meta{font-size:var(--fs-xs);color:var(--faint)}
+
+/* ---------- 用户组卡片 ---------- */
+.group-card .gc-head{display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)}
+.group-card .gc-head h3{margin:0;flex:1;min-width:0}
+.group-card .gc-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3);margin-bottom:var(--s3)}
+@media(max-width:720px){.group-card .gc-grid{grid-template-columns:1fr}}
+.group-card .gc-cell .k{font-size:var(--fs-xs);color:var(--faint)}
+.group-card .gc-cell .v{font-size:var(--fs-md);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ---------- 限额输入（数值 + 单位） ---------- */
+.limit-input{display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:var(--s2)}
+.limit-input .input,.limit-input .select{padding:9px 11px}
+
+/* ---------- 设置页：出厂默认值高亮 ---------- */
+.field.is-default{background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 34%,transparent);border-radius:var(--r-sm);padding:var(--s3)}
+.field.is-default > label{color:var(--warn)}
+.default-tag{font-size:var(--fs-xs);color:var(--warn);display:inline-flex;align-items:center;gap:5px}
+
+/* ---------- 弹窗：信息披露 ---------- */
+.disclosure{display:flex;flex-direction:column;gap:var(--s3);margin-bottom:var(--s4)}
+.disclosure .dc-block{border:1px solid var(--line);border-radius:var(--r-md);padding:var(--s3) var(--s4);background:var(--panel-2)}
+.disclosure .dc-title{font-size:var(--fs-xs);letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:var(--s2)}
+.disclosure .dc-list{display:flex;flex-direction:column;gap:6px;font-size:var(--fs-sm)}
+.disclosure .dc-list .li{display:flex;gap:8px;align-items:baseline}
+.disclosure .dc-list .key{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--faint);flex:none}
+.disclosure .notice{font-size:var(--fs-sm);color:var(--fg-dim)}
+.ack-row{margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--line)}
+
+/* ---------- 分页 ---------- */
+.pager{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s3);font-size:var(--fs-sm);color:var(--muted)}
+.pager .spacer{margin-left:auto}
+.pager .count{font-variant-numeric:tabular-nums}
+
+/* ---------- 表格内联控件 ---------- */
+.cell-select{min-width:150px}
+td .row-actions{display:flex;gap:var(--s2);flex-wrap:wrap}
+
+/* ---------- 类型徽标（planned = P2） ---------- */
+.badge.planned{background:var(--st-idle-bg);color:var(--st-idle)}
+
+/* ---------- 顶栏管理员身份 ---------- */
+.admin-chip{display:inline-flex;align-items:center;gap:7px;font-size:var(--fs-xs);color:var(--muted)}
+.admin-chip .dot-s{width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none}
+
+/* ---------- 分享占位 ---------- */
+.placeholder-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--s4)}
+.placeholder-grid .ph{border:1px dashed var(--line-strong);border-radius:var(--r-md);padding:var(--s4);background:color-mix(in srgb,var(--panel) 55%,transparent)}
+.placeholder-grid .ph .k{font-weight:600;font-size:var(--fs-sm);margin-bottom:var(--s1)}
+.placeholder-grid .ph .d{font-size:var(--fs-xs);color:var(--muted)}
+
+/* ---------- 审计动作徽标配色映射 ---------- */
+.badge.act{background:var(--st-idle-bg);color:var(--fg-dim)}
+
+/* 空态时不要留一排行内表头，避免"表头 + 空框"的割裂感 */
+.table-wrap:has(.empty) thead,
+.table-wrap:has(.empty) .table thead { display: none; }

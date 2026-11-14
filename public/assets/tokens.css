@@ -1,0 +1,114 @@
+/* R6T5 Drive · 设计令牌（唯一颜色/排版来源，所有页面只允许引用这里的变量）
+   深色为默认，浅色通过 <html data-theme="light"> 切换。 */
+
+:root{
+  /* 底色层 */
+  --bg:#0e1512;
+  --bg-soft:#111a15;
+  --panel:#151f1b;
+  --panel-2:#1a2620;
+  --panel-3:#21302a;
+  --line:rgba(255,255,255,.09);
+  --line-strong:rgba(255,255,255,.17);
+
+  /* 文字 */
+  --fg:#e6f0ea;
+  --fg-dim:#c3d3cb;
+  --muted:#93a89e;
+  --faint:#6d8279;
+
+  /* 主色 / 强调 */
+  --acc:#4a9e6e;
+  --acc-ink:#d7f3e2;
+  --acc-2:#ffd54f;
+  --acc-grad:linear-gradient(135deg,#3f8d61,#55b47c);
+
+  /* 语义色 */
+  --ok:#7ed6a5;
+  --warn:#f0b45e;
+  --danger:#e06c75;
+  --danger-soft:rgba(224,108,117,.12);
+  --info:#6ba8e0;
+  --warn-soft:rgba(240,180,94,.13);
+  --ok-soft:rgba(126,214,165,.12);
+  --info-soft:rgba(107,168,224,.12);
+
+  /* 阴影与圆角 */
+  --sh-1:0 1px 2px rgba(0,0,0,.28);
+  --sh-2:0 10px 30px -12px rgba(0,0,0,.55);
+  --sh-3:0 24px 60px -20px rgba(0,0,0,.7);
+  --r-xs:6px;
+  --r-sm:9px;
+  --r-md:12px;
+  --r-lg:16px;
+  --r-xl:22px;
+  --r-pill:999px;
+
+  /* 间距刻度 */
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:20px;--s6:24px;--s7:32px;--s8:40px;--s9:56px;
+
+  /* 字体 */
+  --font:"Inter","PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+  --font-mono:"JetBrains Mono","SFMono-Regular",ui-monospace,Consolas,monospace;
+  --fs-xs:11.5px;--fs-sm:12.5px;--fs-md:14px;--fs-lg:16px;--fs-xl:20px;--fs-2xl:26px;--fs-3xl:34px;
+
+  /* 动效 */
+  --t-fast:120ms ease;
+  --t:200ms cubic-bezier(.2,.7,.3,1);
+
+  /* 布局尺寸 */
+  --sidebar-w:232px;
+  --topbar-h:60px;
+  --page-max:1220px;
+
+  color-scheme:dark;
+}
+
+html[data-theme="light"]{
+  --bg:#eef3ef;
+  --bg-soft:#e8efe9;
+  --panel:#ffffff;
+  --panel-2:#f6faf7;
+  --panel-3:#eaf1ec;
+  --line:rgba(16,32,24,.10);
+  --line-strong:rgba(16,32,24,.20);
+
+  --fg:#16211c;
+  --fg-dim:#33463c;
+  --muted:#5d6f66;
+  --faint:#7d8f86;
+
+  --acc:#3f8d61;
+  --acc-ink:#0f2d1e;
+  --acc-2:#b8860b;
+  --acc-grad:linear-gradient(135deg,#3f8d61,#4fa672);
+
+  --ok:#2f9d6b;
+  --warn:#a9761c;
+  --danger:#c0454f;
+  --danger-soft:rgba(192,69,79,.10);
+  --info:#2f74ad;
+  --warn-soft:rgba(169,118,28,.12);
+  --ok-soft:rgba(47,157,107,.10);
+  --info-soft:rgba(47,116,173,.10);
+
+  --sh-1:0 1px 2px rgba(20,40,30,.08);
+  --sh-2:0 8px 24px -14px rgba(20,40,30,.28);
+  --sh-3:0 20px 50px -22px rgba(20,40,30,.35);
+
+  color-scheme:light;
+}
+
+/* 状态色别名：组件里一律用语义名，不写死十六进制 */
+:root{
+  --st-ok:var(--ok);
+  --st-ok-bg:var(--ok-soft);
+  --st-warn:var(--warn);
+  --st-warn-bg:var(--warn-soft);
+  --st-danger:var(--danger);
+  --st-danger-bg:var(--danger-soft);
+  --st-info:var(--info);
+  --st-info-bg:var(--info-soft);
+  --st-idle:var(--faint);
+  --st-idle-bg:rgba(147,168,158,.10);
+}

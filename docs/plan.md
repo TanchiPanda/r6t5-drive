@@ -1,91 +1,96 @@
-# R6T5 Drive 架构与实施计划
+# R6T5 Drive 实施计划
+
+> 本文档记录当前架构口径与分期进度。接口字段以 [`api-contract.md`](api-contract.md) 为准；部署运维见 [`deploy.md`](deploy.md)。
+> 旧的 Cloudflare Worker + Supabase 元数据 + R2 存储方案已整体作废，以下均为新架构：Node.js + Express + 纯前端静态页 + SQLite 元数据 + Docker 自托管。
 
 ## 1. 总体结构
 
 ```
-浏览器 ──► app.html（静态页）
-             │ 1. Hub 登录换 JWT
-             ▼
-      Worker: r6t5-drive-api
-        ├─ /api/sign      直传签名（R2 / S3 预签名 URL）
-        ├─ /api/files     列表 / 建目录 / 重命名 / 删除
-        ├─ /api/share     创建与校验分享
-        └─ /api/quota     容量统计
-             │
-      Supabase（元数据） + 对象存储（文件本体）
+浏览器
+  │  HTTP
+  ▼
+Express 容器（server/index.js 入口）
+  ├─ 静态：public/ 页面与 assets
+  ├─ /api/* 路由：鉴权 → 状态机 → 管理端 → 用户端文件 → 回收站 → 分享（占位）
+  ├─ 会话：Cookie r6t5_sid（用户）/ r6t5_admin（管理员），httpOnly
+  ├─ SQLite：settings / groups / users / nodes / traffic / shares / audit / storage_strategies
+  └─ 存储适配层
+       ├─ volume  本地数据卷读写（P1）
+       ├─ s3      S3 兼容读写（P2 预留适配器位）
+       └─ github  GitHub 仓库只读（P2 预留适配器位）
+
+账号体系：Supabase Auth（后台配置 URL / anon key / service key；service key 仅服务端使用）。
 ```
 
-文件本体**不经过 Worker**：前端拿签名 URL 直传对象存储，Worker 只写元数据与鉴权。
+文件物理路径与逻辑路径均以 Email 为根段：`data/<Email>/文件夹/文件`，路径安全校验在服务端统一完成。
 
-## 2. 数据表（草案）
+## 2. 数据模型概览（SQLite）
 
-```sql
-create table drive_users (
-  uid          text primary key,          -- Hub 邮箱
-  display_name text,
-  quota_bytes  bigint default 10737418240,
-  used_bytes   bigint default 0,
-  created_at   timestamptz default now()
-);
-
-create table drive_nodes (                 -- 文件与目录同表
-  id         uuid primary key default gen_random_uuid(),
-  uid        text references drive_users(uid) on delete cascade,
-  parent_id  uuid references drive_nodes(id),
-  name       text not null,
-  is_dir     boolean default false,
-  size       bigint default 0,
-  hash       text,                         -- 内容哈希，用于秒传
-  storage_key text,                        -- 对象存储里的 key
-  mime       text,
-  deleted_at timestamptz,                  -- 回收站
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  unique (uid, parent_id, name)
-);
-
-create table drive_shares (
-  id         uuid primary key default gen_random_uuid(),
-  node_id    uuid references drive_nodes(id) on delete cascade,
-  token      text unique not null,
-  password   text,                         -- 可为空
-  expires_at timestamptz,
-  max_downloads int,
-  downloads  int default 0,
-  created_at timestamptz default now()
-);
-
-create table drive_audit (
-  id         bigserial primary key,
-  uid        text,
-  action     text,
-  target     text,
-  ip_hash    text,
-  at         timestamptz default now()
-);
-```
+| 表 | 用途 |
+|---|---|
+| `settings` | 站点名、对外地址、默认用户组、是否开放注册、回收站保留天数等 |
+| `groups` | 用户组：空间上限、单文件上限、7 天上传流量上限、是否默认组 |
+| `users` | 本地用户映射（supabase uid + email）、显示名、所属组、禁用状态、用量统计 |
+| `nodes` | 文件与目录同表：父节点、名称、类型、大小、MIME、存储策略、内容哈希（去重预留）、软删时间 |
+| `traffic` | 上传 / 下载流量流水，按 7 天窗口统计 |
+| `shares` | 分享记录：token、提取码、有效期、下载次数与已用次数（P2 启用） |
+| `audit` | 登录、上传、下载、删除、后台操作等审计流水 |
+| `storage_strategies` | 存储策略：类型、区域、容量、只读标记、脱敏后的适配器配置 |
 
 ## 3. 关键决定
 
 | 议题 | 结论 | 理由 |
 |---|---|---|
-| 文件走不走 Worker | 不走 | R2 无出口费，直传省 Worker 请求与 100MB 限制 |
-| 鉴权 | Hub JWT | 一处登录，生态内通用 |
-| 秒传 | `hash` 命中即复用 `storage_key` | 同文件只存一份 |
-| 回收站 | `deleted_at` 软删，定时任务 30 天后真删 | 误删可恢复 |
-| 分享 | 独立 token + 可选密码 | 不进主站路由，便于审计 |
+| 运行形态 | 一个容器一个站点，容器内多用户 | 部署简单；站点之间数据卷与端口隔离，便于多实例 |
+| 元数据 | 本地 SQLite（better-sqlite3） | 单站点体量足够，免外部数据库；备份即文件级拷贝 |
+| 账号 | Supabase Auth，服务端代理校验 | 前端不持有 service key；用户会话由本站 Cookie 维持 |
+| 存储抽象 | 三类策略：volume / s3 / github，适配器接口统一 | P1 先落地本地卷，对象存储与只读仓库后续插拔 |
+| 配额拦截 | 上传前依次校验：单文件上限 → 空间剩余 → 7 天流量 | 先查后写，校验失败不留半截文件 |
+| 回收站 | `deleted_at` 软删，保留 `TRASH_RETENTION_DAYS`（默认 30）天后真删 | 误删可恢复；彻底删除才落盘清理 |
+| 去重 / 秒传 | `nodes.hash` 字段预留；命中内容哈希时复用已存对象 | 同文件只存一份，省流量与空间（P2 落地） |
+| 分享 | 独立 token + 可选提取码 / 有效期 / 下载次数 / 文件夹分享 | 不进主站文件路由，便于审计与限速（P2 落地） |
 
-## 4. 分期
+## 4. 分期进度
 
-- **P0** 骨架（已完成）：仓库、介绍页、README、本计划
-- **P1** 上传 / 列表 / 下载 / 删除；JWT 校验；R2 后端
-- **P2** 目录树、分享、回收站、秒传
-- **P3** Docker 自托管 + S3/WebDAV 适配
-- **P4** 配额与团队空间、开放 API
+### P0 · 已完成
 
-## 5. 待定
+- 仓库骨架、介绍页（`index.html`）、文档体系与 API 契约冻结。
+- 确定新架构口径：Express + SQLite + 本地卷 + Docker 自托管。
 
-- 默认存储：R2（无出口费）还是 S3（兼容性广）
-- 免费额度：10GB / 账号？
-- 是否用钱包积分兑换容量
-- 是否绑定 `drive.r6t5.dpdns.org`（需你确认后再加 CNAME）
+### P1 · 本轮（后端骨架 + 可用闭环）
+
+已实现 / 正在落地：
+
+- 后端骨架：入口、Express 装配、配置读取、SQLite 连接与迁移、错误码与路径校验库。
+- 初始化状态机：`/api/setup/status` 按 supabase → storage → groups → site → ready 顺序给出唯一引导。
+- 登录闭环：Supabase 密码登录、登出、`/api/me`；管理员登录 / 会话；`DEV_AUTH` 自测开关（生产关闭）。
+- 管理端：概览（用户、流量、存储、用户组、最近操作、14 天序列）、用户组增改删、用户列表 / 禁用 / 同步、站点设置、审计、回收站查看。
+- 用户端：目录列表、建目录、上传（multipart 单文件）、流式下载、重命名、移动、软删、搜索、回收站恢复与彻底删除。
+- 配额拦截：单文件 / 空间 / 7 天上传流量三类超限分别返回对应错误码。
+- 本地卷存储策略读写；策略创建前的字段披露确认。
+
+### P2 · 规划（接口位 / 页面骨架已留，细节未实现）
+
+以下能力在契约中已留路由或字段占位，未实现时接口返回 `501 not_implemented`，前端展示「P2 规划中」骨架：
+
+- **S3 兼容存储适配器**：七牛、阿里云 OSS、腾讯云 COS、华为云 OBS、金山 KS3、又拍、OneDrive 等；`/api/admin/storage` 中 `type=s3` 当前为 `planned`，不允许创建。
+- **GitHub 仓库只读策略**：`type=github`，引用只读仓库文件。
+- **完整分享**：创建分享（有效期、提取码、下载次数、文件夹分享）、公开访问 `/api/share/:token`、分享列表；当前 `POST /api/shares` 与公开访问均为占位。
+- **文件预览**：图片 / 文档 / 音视频在线预览，不强制下载。
+- **WebDAV**：对外暴露 WebDAV 挂载接口。
+- **离线下载**：对接 aria2 / qBittorrent 侧车（compose 中已留注释开关），链接 / BT 任务拉入网盘。
+- **Office 在线编辑**：对接 ONLYOFFICE Document Server（compose 中已留注释开关，端口 8082）。
+- **PWA 与 i18n**：离线缓存、可安装；界面多语言。
+
+## 5. 保留的旧思路（新架构口径）
+
+- **秒传 / 去重**：仍按内容哈希去重，`nodes.hash` 已预留；命中后复用物理对象，不重复落盘。落地时结合存储适配器的对象引用能力实现。
+- **软删 30 天**：沿用软删 + 定时清理思路，天数由 `TRASH_RETENTION_DAYS` 控制；回收站在用户侧与管理侧均可查看，彻底删除才移除物理文件。
+- **目录树与批量操作**：P1 已具备基础目录浏览与单文件上传，批量 / 拖拽 / 分片上传在 P2 结合大文件场景补强。
+
+## 6. 待定事项
+
+- S3 适配器首批接入哪几家对象存储。
+- 默认免费额度口径（空间 / 单文件 / 7 天流量）与后续扩容方式。
+- 是否与 r6t5 生态其它站点打通账号或容量体系。
+- 对外域名与 CNAME 绑定（部署侧事项，见 `deploy.md`）。
