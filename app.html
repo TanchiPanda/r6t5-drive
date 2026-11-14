@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6T5 Drive · 我的文件</title>
+<style>
+:root{
+  --bg:#0e1512;--panel:#151f1b;--panel2:#1b2621;--line:rgba(255,255,255,.09);
+  --fg:#e6f0ea;--muted:#93a89e;--acc:#4a9e6e;--acc2:#ffd54f;--ico:#7ed6a5;
+}
+[data-theme="light"]{
+  --bg:#f5f7f5;--panel:#ffffff;--panel2:#f0f3f1;--line:rgba(20,40,30,.1);
+  --fg:#1d2a24;--muted:#66766d;--acc:#3f8d61;--acc2:#b8860b;--ico:#2f7a52;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.6 "Microsoft Yahei","PingFang SC",system-ui,sans-serif;min-height:100vh}
+a{color:inherit}
+.shell{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+/* 侧栏 */
+.side{border-right:1px solid var(--line);padding:18px 14px;display:flex;flex-direction:column;gap:4px;background:var(--panel)}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px;padding:4px 6px 18px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 12px var(--acc)}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav button{display:flex;align-items:center;gap:9px;width:100%;padding:9px 10px;border:none;background:none;color:var(--muted);font-size:13.5px;border-radius:9px;cursor:pointer;text-align:left}
+.nav button:hover{background:var(--panel2);color:var(--fg)}
+.nav button.on{background:rgba(74,158,110,.16);color:var(--fg);font-weight:600}
+.nav svg{width:16px;height:16px;flex:0 0 16px;opacity:.75}
+.quota{margin-top:auto;padding:14px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.quota .row{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)}
+.quota .bar{height:6px;border-radius:99px;background:rgba(128,160,144,.22);margin:9px 0 8px;overflow:hidden}
+.quota .fill{height:100%;width:31%;background:linear-gradient(90deg,#3f8d61,#55b47c)}
+.quota .hint{font-size:11.5px;color:var(--muted)}
+/* 主区 */
+.main{display:flex;flex-direction:column;min-width:0}
+.top{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+.crumb{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--fg)}
+.search{margin-left:auto;position:relative}
+.search input{width:220px;max-width:34vw;padding:8px 11px 8px 32px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-size:13px;outline:none}
+.search input:focus{border-color:var(--acc)}
+.search svg{position:absolute;left:10px;top:8px;width:15px;height:15px;opacity:.5}
+.iconbtn{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--line);background:var(--panel);border-radius:9px;cursor:pointer;color:var(--muted)}
+.iconbtn:hover{color:var(--fg);border-color:var(--acc)}
+.iconbtn svg{width:16px;height:16px}
+.toolbar{display:flex;align-items:center;gap:10px;padding:14px 20px;flex-wrap:wrap}
+.toolbar h1{font-size:17px;font-weight:700;margin-right:auto}
+.btn{padding:8px 15px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-size:13px;cursor:pointer}
+.btn.primary{background:linear-gradient(135deg,#3f8d61,#55b47c);border:none;color:#fff;font-weight:700}
+.btn.danger{color:#e0605f;border-color:rgba(224,96,95,.4)}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{border:none;background:var(--panel);color:var(--muted);padding:7px 9px;cursor:pointer;display:grid;place-items:center}
+.seg button.on{background:rgba(74,158,110,.18);color:var(--fg)}
+.seg svg{width:15px;height:15px}
+/* 文件区 */
+.body{padding:0 20px 40px;flex:1;min-width:0}
+.drop{border:1px dashed var(--line);border-radius:12px;padding:14px;color:var(--muted);font-size:13px;text-align:center;margin-bottom:14px;display:none}
+table.files{width:100%;border-collapse:collapse;table-layout:fixed}
+thead th{text-align:left;font-weight:500;color:var(--muted);font-size:12.5px;padding:9px 10px;border-bottom:1px solid var(--line)}
+tbody tr{border-bottom:1px solid var(--line)}
+tbody tr:hover{background:var(--panel)}
+td{padding:11px 10px;vertical-align:middle}
+.fname{display:flex;align-items:center;gap:10px;min-width:0}
+.fico{width:30px;height:30px;flex:0 0 30px;border-radius:8px;display:grid;place-items:center;background:rgba(74,158,110,.14);color:var(--ico)}
+.fico svg{width:15px;height:15px}
+.fname span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{color:var(--muted);font-size:12.5px}
+.acts{display:flex;gap:4px;justify-content:flex-end;opacity:.42;transition:opacity .12s;white-space:nowrap}
+tr:hover .acts,tr:focus-within .acts{opacity:1}
+.acts button{border:none;background:none;color:var(--muted);cursor:pointer;padding:3px 6px;border-radius:6px;font-size:12px;white-space:nowrap}
+.acts button:hover{color:var(--fg);background:var(--panel2)}
+/* 网格视图 */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.gcard{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel);display:flex;flex-direction:column;gap:8px}
+.gcard .fico{width:38px;height:38px;flex-basis:38px}
+.gcard .n{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 空态 */
+.empty{padding:56px 0;text-align:center;color:var(--muted)}
+.empty svg{width:40px;height:40px;opacity:.35;margin-bottom:10px}
+/* toast */
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,16px);background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+  padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.18s;z-index:20}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+@media(max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .side{border-right:none;border-bottom:1px solid var(--line);flex-direction:row;flex-wrap:wrap;align-items:center;padding:12px}
+  .brand{padding:0 6px 0 2px}
+  .nav{flex-direction:row;flex-wrap:wrap}
+  .quota{display:none}
+  .search input{width:150px;max-width:42vw}
+  .toolbar h1{width:100%;margin-right:0}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><span class="dot"></span>r6t5 drive</div>
+    <div class="nav" id="nav">
+      <button class="on" data-view="all">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16M4 12h16M4 17h10"/></svg>全部文件
+      </button>
+      <button data-view="recent">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>最近使用
+      </button>
+      <button data-view="star">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg>收藏
+      </button>
+      <button data-view="share">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="12" r="2.4"/><circle cx="17" cy="7" r="2.4"/><circle cx="17" cy="17" r="2.4"/><path d="M9.2 11l5.6-2.8M9.2 13l5.6 2.8"/></svg>分享
+      </button>
+      <button data-view="trash">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 7h14M9 7V5h6v2M7 7l1 12h8l1-12"/></svg>回收站
+      </button>
+    </div>
+    <div class="quota">
+      <div class="row"><span>已用 1.6 GB</span><span>共 5 GB</span></div>
+      <div class="bar"><div class="fill"></div></div>
+      <div class="hint">Pro 授权可扩到 20 GB</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="top">
+      <div class="crumb">我的空间 / <b id="crumb">全部文件</b></div>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg>
+        <input id="q" placeholder="搜索文件" autocomplete="off">
+      </div>
+      <button class="iconbtn" id="theme" title="切换主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg>
+      </button>
+    </div>
+
+    <div class="toolbar">
+      <h1 id="title">全部文件</h1>
+      <input type="file" id="picker" multiple hidden>
+      <button class="btn primary" id="upload">上传文件</button>
+      <button class="btn" id="newdir">新建文件夹</button>
+      <div class="seg">
+        <button class="on" id="vlist" title="列表视图"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <button id="vgrid" title="网格视图"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg></button>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="drop" id="drop">松开即可上传（当前为前端演示，不会真正上传）</div>
+      <div id="listWrap">
+        <table class="files">
+          <thead>
+            <tr>
+              <th style="width:44%">名称</th>
+              <th style="width:10%">大小</th>
+              <th style="width:18%">修改时间</th>
+              <th style="width:28%;text-align:right">操作</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="gridWrap" class="grid" style="display:none"></div>
+      <div class="empty" id="empty" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/></svg>
+        <p>这里还什么都没有</p>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+var FILES = [
+  { id:1, name:"毕业设计终稿.docx", type:"doc", size:2457600, time:"2026-11-14 10:22", star:true, dir:false },
+  { id:2, name:"r6t5-docs-配图", type:"dir", size:0, time:"2026-11-13 21:05", star:false, dir:true },
+  { id:3, name:"产品演示.mp4", type:"video", size:483183820, time:"2026-11-13 14:40", star:false, dir:false },
+  { id:4, name:"合同-2026.pdf", type:"pdf", size:1843200, time:"2026-11-12 09:18", star:true, dir:false },
+  { id:5, name:"示例数据.xlsx", type:"sheet", size:98304, time:"2026-11-11 17:33", star:false, dir:false },
+  { id:6, name:"备份-2026Q4.zip", type:"zip", size:1073741824, time:"2026-11-10 03:00", star:false, dir:false },
+  { id:7, name:"头像.png", type:"img", size:512000, time:"2026-11-09 12:12", star:false, dir:false }
+];
+var TRASH = [
+  { id:101, name:"旧版说明.md", type:"doc", size:4096, time:"2026-11-08 22:01", dir:false },
+  { id:102, name:"截图-废弃.png", type:"img", size:740000, time:"2026-11-05 10:00", dir:false }
+];
+
+var state = { view:"all", q:"", mode:"list" };
+var t = document.getElementById("toast");
+function toast(msg){ t.textContent = msg; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(function(){ t.classList.remove("on"); }, 1800); }
+function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function fmt(n){ if(!n) return "—"; var u=["B","KB","MB","GB"], i=0; while(n>=1024&&i<3){n/=1024;i++;} return (i===0?n:n.toFixed(n<10?1:0))+" "+u[i]; }
+var ICONS = {
+  doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>',
+  pdf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 14h6"/></svg>',
+  sheet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>',
+  video:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="14" height="14" rx="2"/><path d="M17 10l4-3v10l-4-3"/></svg>',
+  img:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8" cy="10" r="1.4"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>',
+  dir:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>',
+  zip:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3h12v18H6z"/><path d="M12 3v8M10 6h4M10 9h4"/></svg>'
+};
+function visible(){
+  var src = state.view==="trash" ? TRASH : FILES;
+  if(state.view==="star") src = FILES.filter(function(f){return f.star;});
+  if(state.view==="recent") src = FILES.slice(0,4);
+  if(state.view==="share") src = FILES.slice(2,5);
+  if(state.q){ var q=state.q.toLowerCase(); src = src.filter(function(f){ return f.name.toLowerCase().indexOf(q)>-1; }); }
+  return src;
+}
+function render(){
+  var src = visible();
+  var rows = document.getElementById("rows");
+  var gw = document.getElementById("gridWrap");
+  var lw = document.getElementById("listWrap");
+  var em = document.getElementById("empty");
+  document.getElementById("title").textContent = ({all:"全部文件",recent:"最近使用",star:"收藏",share:"分享",trash:"回收站"})[state.view];
+  document.getElementById("crumb").textContent = ({all:"全部文件",recent:"最近使用",star:"收藏",share:"分享",trash:"回收站"})[state.view];
+
+  if(!src.length){ em.style.display=""; lw.style.display="none"; gw.style.display="none"; return; }
+  em.style.display="none";
+  if(state.mode==="list"){
+    lw.style.display=""; gw.style.display="none";
+    rows.innerHTML = src.map(function(f){
+      return '<tr data-id="'+f.id+'"><td><div class="fname"><div class="fico">'+(ICONS[f.type]||ICONS.doc)+'</div><span title="'+esc(f.name)+'">'+esc(f.name)+(f.star?' ★':'')+'</span></div></td>'
+        +'<td class="meta">'+(f.dir?'—':fmt(f.size))+'</td><td class="meta">'+f.time+'</td>'
+        +'<td><div class="acts">'
+        +'<button data-act="share">分享</button>'
+        +(state.view==="trash"?'<button data-act="restore">恢复</button>':'<button data-act="star">'+(f.star?'取消收藏':'收藏')+'</button><button data-act="rename">重命名</button><button data-act="del">'+(f.dir?'':'删除')+'</button>')
+        +'</div></td></tr>';
+    }).join("");
+  } else {
+    lw.style.display="none"; gw.style.display="";
+    gw.innerHTML = src.map(function(f){
+      return '<div class="gcard" data-id="'+f.id+'"><div class="fico">'+(ICONS[f.type]||ICONS.doc)+'</div>'
+        +'<div class="n" title="'+esc(f.name)+'">'+esc(f.name)+'</div><div class="meta">'+(f.dir?'文件夹':fmt(f.size))+'</div></div>';
+    }).join("");
+  }
+}
+document.getElementById("q").addEventListener("input", function(e){ state.q=e.target.value.trim(); render(); });
+document.getElementById("nav").addEventListener("click", function(e){
+  var b=e.target.closest("button[data-view]"); if(!b) return;
+  state.view=b.dataset.view; state.q=""; document.getElementById("q").value="";
+  [].forEach.call(this.querySelectorAll("button"), function(x){ x.classList.toggle("on", x===b); });
+  render();
+});
+document.getElementById("vlist").onclick=function(){ state.mode="list"; this.classList.add("on"); document.getElementById("vgrid").classList.remove("on"); render(); };
+document.getElementById("vgrid").onclick=function(){ state.mode="grid"; this.classList.add("on"); document.getElementById("vlist").classList.remove("on"); render(); };
+
+document.getElementById("upload").onclick=function(){ document.getElementById("picker").click(); };
+document.getElementById("picker").onchange=function(e){
+  var fs=[].slice.call(e.target.files||[]); if(!fs.length) return;
+  fs.forEach(function(file, i){
+    FILES.unshift({ id: Date.now()+i, name:file.name, type: guess(file.name), size:file.size, time: now(), star:false, dir:false });
+  });
+  state.view="all"; document.getElementById("title").textContent="全部文件";
+  render(); toast("已加入列表（演示，未真正上传）");
+  e.target.value="";
+};
+document.getElementById("newdir").onclick=function(){
+  var name = prompt("文件夹名称");
+  if(!name) return;
+  FILES.unshift({ id:Date.now(), name:name, type:"dir", size:0, time:now(), star:false, dir:true });
+  render(); toast("已创建文件夹");
+};
+function now(){ var d=new Date(); function p(n){return n<10?"0"+n:n;} return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes()); }
+function guess(n){ var e=(n.split(".").pop()||"").toLowerCase();
+  if(["png","jpg","jpeg","gif","webp","svg"].indexOf(e)>-1) return "img";
+  if(["mp4","mov","mkv","avi","webm"].indexOf(e)>-1) return "video";
+  if(["xls","xlsx","csv"].indexOf(e)>-1) return "sheet";
+  if(e==="pdf") return "pdf";
+  if(["zip","rar","7z","gz"].indexOf(e)>-1) return "zip";
+  return "doc";
+}
+document.body.addEventListener("click", function(e){
+  var b=e.target.closest("button[data-act]"); if(!b) return;
+  var tr=b.closest("tr, .gcard"); var id=Number(tr.getAttribute("data-id"));
+  var arr = state.view==="trash" ? TRASH : FILES;
+  var f = arr.filter(function(x){return x.id===id;})[0]; if(!f) return;
+  var act=b.dataset.act;
+  if(act==="share") toast("分享链接生成中（后端未接）");
+  else if(act==="star"){ f.star=!f.star; render(); }
+  else if(act==="rename"){ var nn=prompt("新名称", f.name); if(nn){ f.name=nn; render(); toast("已重命名"); } }
+  else if(act==="del"){ FILES = FILES.filter(function(x){return x.id!==f.id;}); render(); toast("已移入回收站（演示）"); }
+  else if(act==="restore"){ TRASH = TRASH.filter(function(x){return x.id!==f.id;}); render(); toast("已恢复"); }
+});
+// 拖拽上传
+var drop=document.getElementById("drop");
+["dragenter","dragover"].forEach(function(ev){ document.addEventListener(ev, function(e){ e.preventDefault(); drop.style.display=""; }); });
+["dragleave","drop"].forEach(function(ev){ document.addEventListener(ev, function(e){ e.preventDefault(); if(ev==="drop"&&e.dataTransfer.files.length){ document.getElementById("picker").files=e.dataTransfer.files; document.getElementById("picker").onchange({target:document.getElementById("picker")}); } drop.style.display="none"; }); });
+
+// 主题
+var saved = localStorage.getItem("r6t5.drive.theme");
+if(saved==="light") document.documentElement.setAttribute("data-theme","light");
+document.getElementById("theme").onclick=function(){
+  var cur=document.documentElement.getAttribute("data-theme")==="light";
+  if(cur){ document.documentElement.removeAttribute("data-theme"); localStorage.setItem("r6t5.drive.theme","dark"); }
+  else { document.documentElement.setAttribute("data-theme","light"); localStorage.setItem("r6t5.drive.theme","light"); }
+};
+render();
+</script>
+</body>
+</html>
