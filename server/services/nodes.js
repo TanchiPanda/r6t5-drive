@@ -1,6 +1,7 @@
 import { db } from '../db.js';
 import { nowIso, genId } from '../lib/format.js';
 import { parentOf, basenameOf } from '../lib/paths.js';
+import { conflict } from '../lib/errors.js';
 
 export function upsertUser({ id, email, displayName = '', groupId = null }) {
   const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
@@ -71,6 +72,13 @@ export function softDeleteRecursive(path) {
 
 export function restoreRecursive(path) {
   const nodes = descendantsOf(path);
+  // 目标路径已被活跃节点占用时不要硬写（部分唯一索引会约束），明确报冲突
+  for (const n of nodes) {
+    const active = db.prepare('SELECT id FROM nodes WHERE path = ? AND deletedAt IS NULL').get(n.path);
+    if (active && active.id !== n.id) {
+      throw conflict('目标路径已存在同名节点，无法恢复', { path: n.path });
+    }
+  }
   const stmt = db.prepare('UPDATE nodes SET deletedAt = NULL, updatedAt = ? WHERE id = ?');
   const tx = db.transaction(() => {
     for (const n of nodes) stmt.run(nowIso(), n.id);

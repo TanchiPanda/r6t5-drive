@@ -41,6 +41,27 @@ export const shareCodeInvalid = (details) => new ApiError(403, 'share_code_inval
 export const previewUnsupported = (details) => new ApiError(415, 'preview_unsupported', '该文件类型不支持在线预览', details);
 export const previewTooLarge = (details) => new ApiError(413, 'preview_too_large', '文件过大，不适合在线预览', details);
 
+
+// ---- P4 传输增强 ----
+export const uploadSessionNotFound = () => new ApiError(404, 'upload_session_not_found', '上传会话不存在或已清理，请重新开始');
+export const uploadSessionExpired = () => new ApiError(410, 'upload_session_expired', '上传会话已过期，请重新开始');
+export const uploadPartRange = (details) => new ApiError(400, 'upload_part_out_of_range', '分片序号超出范围', details);
+export const uploadIncomplete = (details) => new ApiError(409, 'upload_incomplete', '分片尚未全部上传完成', details);
+export const zipTooLarge = (details) => new ApiError(413, 'zip_too_large', '打包/解压体积超出上限', details);
+export const zipTooManyEntries = (details) => new ApiError(400, 'zip_too_many_entries', '条目数量超出上限', details);
+export const zipInvalid = (message = '压缩包格式无效或已损坏', details) => new ApiError(400, 'zip_invalid', message, details);
+export const zipSlipBlocked = (details) => new ApiError(400, 'zip_slip_blocked', '压缩包内含越界路径，已拒绝解压', details);
+
+
+// ---- P5 扩展能力 ----
+export const appPasswordInvalid = (message = '应用密码无效或已被撤销') =>
+  new ApiError(401, 'app_password_invalid', message, {});
+export const appPasswordNotFound = () => new ApiError(404, 'app_password_not_found', '应用密码不存在');
+export const webdavUnsupported = (details) =>
+  new ApiError(405, 'webdav_method_not_allowed', '该 WebDAV 方法暂不支持', details);
+export const integrationNotConfigured = (provider, message, details = {}) =>
+  new ApiError(503, 'integration_not_configured', message, { provider, ...details });
+
 export function errorBody(err) {
   const code = err.code || 'internal_error';
   const message = err.message || '内部错误';

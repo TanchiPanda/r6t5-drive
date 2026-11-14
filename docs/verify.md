@@ -196,3 +196,65 @@ PREVIEW_BASE=http://127.0.0.1:8090 node tools/test-p3-preview.mjs # 14/14（脚�
 - 预览统一入口：`server/services/preview.js` 的 `sendPreview({req,res,strategy,logicalPath,node})`；类型分类 `classify()`；JPEG EXIF `jpegOrientation()`。
 - Markdown 净化：`server/lib/markdown.js`（先整段转义 → 白名单语法 → 链接协议白名单 → 输出后 `assertSafeHtml()` 复检）。
 - Range：volume 用 `fs.createReadStream({start,end})`；S3 用 `Range` 请求头（`caps.range=true`）；GitHub `caps.range=false`，≤100MB 落临时文件按范围读，>100MB 返回 415。
+
+## 8. P4「传输增强」验收（后端）
+
+### 8.1 逐项结果（实测）
+
+| # | 验收项 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 分片上传三段接口（init / part / complete） | 通过 | `BASE=http://127.0.0.1:8090 node tools/test-p4-uploads.mjs` → **28/28**；3 片（1MB+1MB+0.5MB）合并后下载 sha256 一致 |
+| 2 | 断点续传（服务端记录已完成分片） | 通过 | 只传 1 片时 `GET /api/uploads/:id` 返回 `missing=[1,2]`；只补缺片即可 complete；乱序 + 重复上传同 index 仍去重为 `[0,1,2]` |
+| 3 | 缺片 complete 被拒 | 通过 | 409 `upload_incomplete` + `details.missing=[1,2]` |
+| 4 | 分片落临时目录、完成合并后清理 | 通过 | `<STORAGE_ROOT>/.tmp/chunks/<id>/`；abort 后目录不存在，重复 abort 幂等 |
+| 5 | 过期分片清理 | 通过 | 会话 24h 过期；`server/index.js` 启动扫一次 + 每小时 `sweepExpired()`（启动日志 `[uploads] 过期会话扫描完成`）；过期会话传片 410 `upload_session_expired` |
+| 6 | 并发 | 通过（代码 + 单请求验证） | 同一会话 complete 用内存锁串行化，第二次返回 409；part 先写 `.tmp` 再原子 rename |
+| 7 | 批量打包下载（流式，不落整包） | 通过 | `tools/test-p4-archive.mjs` → **39/39**；10MB 文件打包 RSS 增量 0–0.9MB；`unzip -t` `No errors detected` |
+| 8 | 打包文件名 UTF-8 | 通过 | `Content-Disposition: attachment; filename*=UTF-8''...`；反向互通测试：系统 `zip` 造的中文名包能被自研 reader 正确读回 |
+| 9 | 在线压缩 | 通过 | `POST /api/files/compress` 201，产物 `unzip -t` 通过、回读 sha256 一致 |
+| 10 | 解压（含大小/条目上限） | 通过 | `POST /api/files/extract` 201 `extracted=3`；重复解压全部 `skipped(exists)` 不覆盖 |
+| 11 | zip slip 防护 | 通过 | 含 `../evil.txt`、`/abs/evil.txt`、`a/../../evil.txt`、反斜杠、符号链接 → 400 `zip_slip_blocked`，目标目录无任何新文件 |
+| 12 | 只读策略拦截 | 通过 | 只读目录压缩/解压 → 403 `strategy_readonly` |
+| 13 | 非法 zip | 通过 | 截断包 / 非 zip → 400 `zip_invalid`（"未找到 ZIP 中央目录结束记录"） |
+| 14 | P1–P3 不回归 | 通过 | `node tools/smoke-test.mjs` → **55/55**（新增「软删后同名重建」回归项） |
+
+### 8.2 顺带修掉的一个真实缺陷
+
+`nodes.path` 原本是内联 `UNIQUE`，软删（回收站）留下的 tombstone 会继续占用路径，导致**同名文件重新上传/解压/压缩直接 500 `UNIQUE constraint failed`**。
+
+- 修法：`server/schema.sql` 改为「仅未删除行唯一」的部分唯一索引 `idx_nodes_path_active`；`server/db.js` 的 `migrate()` 检测到老库内联 UNIQUE（自动索引作用在 `path` 上）时自动重建 `nodes` 表并迁移数据（已用构造老库实测：2 行数据无损、同名重建成功、活跃路径重复仍被拦）。
+- 回归项：`tools/smoke-test.mjs` 的 22a/22b/22c（上传 → 软删 → 同名重建 201）。
+- `restoreRecursive` 现在会在「目标路径已被活跃节点占用」时返回 409 `conflict`，而不是抛 SQLite 约束错误。
+
+### 8.3 未验证 / 沙箱限制
+
+| 项 | 原因 | 上线前怎么补 |
+|---|---|---|
+| 前端多选 / 分片进度 / 续传 UI / P4 截图 | **本期未完成**（前端产线未交付） | 需要单独一轮前端实现与截图 |
+| S3/GitHub 策略上的分片上传与打包解压 | 本机只有 volume 与 fake-s3（fake-s3 不回 206） | 接真实 S3 后复跑 |
+| 10001 条目 / 5GB 上限的 HTTP 级用例 | 造 1 万节点太慢，改为 lib 级单测覆盖 | 需要时用脚本批量造节点 |
+| ZIP64（>4GiB） | 不支持，按上限拒绝 | 超大包需求需补 ZIP64 |
+| RSS 精确隔离测量 | 服务端与测试同机，6MB 用例受 V8 堆抖动影响（已为断言设 32MB 上限）；另用 100MB 分片上传实测 RSS 增长 9MB | 需要时用独立进程 + 采样器 |
+
+## 9. P5「扩展能力」验收（截至本轮）
+
+### 9.1 已完成并实测
+
+| # | 能力 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | WebDAV 最小可用集（OPTIONS/PROPFIND/GET/HEAD/PUT/DELETE/MKCOL/MOVE） | 通过（临时挂载实例） | `tools/test-p5-dav.mjs` → **42/42**；PUT 2MB 落盘、MOVE（绝对 URL Destination）、Overwrite=F 412、只读 403、未支持方法 405 且 Allow 正确、PROPFIND XML 不含 Email 段 |
+| 2 | 应用密码（Basic Auth 凭据） | 通过 | 创建时只返回一次明文；列表仅 `id/name/createdAt/lastUsedAt/revokedAt`；撤销后 401；库内仅 PBKDF2 hash + salt |
+| 3 | 离线下载（aria2 可选集成） | 通过（对本地假 aria2） | `tools/test-p5-integrations.mjs` → **28/28**；未配置 → 503 `integration_not_configured`；配置但不可达 → 502 `upstream_error`；可用 → 201 建任务并透传 `tellStatus` |
+| 4 | Office 在线编辑（OnlyOffice 可选集成） | 通过（只读预览模式） | 未配置 → 200 `enabled:false` + 中文 reason；配齐 `OO_DS_URL`+`OO_JWT_SECRET` → `enabled:true`、三段式 JWT 验签通过、docx/xlsx/pptx 分别 word/cell/slide；回调如实返回 `error:1`「P5 未实现保存回写」 |
+| 5 | 密钥不外泄 | 通过 | 响应/日志 grep 不到 `ARIA2_SECRET`、`OO_JWT_SECRET` 明文 |
+| 6 | P1–P4 不回归 | 通过 | 挂载全部新路由后 `smoke-test.mjs` **55/55** |
+
+### 9.2 未完成 / 未验证（如实说明）
+
+| 项 | 状态 | 原因 |
+|---|---|---|
+| 媒体元数据（图片尺寸 / 音视频时长） | 代码在写，**未验收** | 产线未回结果，本期不宣称可用 |
+| PWA + i18n（zh-CN/en-US、离线壳） | **未开始** | 时间用尽，未实现 |
+| WebDAV 在正式 `app.js` 挂载后的回归 | 未跑 | 仅在脚本自建临时 express 实例上 42/42；正式挂载已加（`/dav` 在 `express.json` 之前），需再跑一次 `tools/test-p5-dav.mjs` 确认 |
+| 真实 aria2 / 真实 OnlyOffice Document Server | 未验证 | 沙箱无法启动这两个外部服务，只对本地假 aria2 与 JWT 自校验 |
+| WebDAV 跨策略 MOVE、Range | 未验证 / 未实现 | 跨策略依赖远端驱动；Range 未实现（未写 `Accept-Ranges`，不声称 206） |

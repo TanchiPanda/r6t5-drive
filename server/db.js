@@ -15,6 +15,39 @@ export function migrate() {
     const cols = db.prepare('PRAGMA table_info(shares)').all().map((c) => c.name);
     if (!cols.includes('email')) db.exec('DROP TABLE shares');
   }
+  // P4：老库 nodes.path 是内联 UNIQUE（软删 tombstone 会占住路径，同名重建直接 500）
+  // 检测到该自动索引就重建表，改成「仅未删除行唯一」的部分唯一索引
+  const idxList = db.prepare('PRAGMA index_list(nodes)').all();
+  // 逐个检查自动索引：TEXT 主键也会生成 sqlite_autoindex_nodes_1，只有作用在 path 上的才是老 UNIQUE
+  let inlineUniquePath = false;
+  for (const i of idxList) {
+    if (i.unique !== 1 || !String(i.name).startsWith('sqlite_autoindex_nodes')) continue;
+    const cols = db.prepare(`PRAGMA index_info(${JSON.stringify(i.name).replace(/"/g, "'")})`).all().map((c) => c.name);
+    if (cols.length === 1 && cols[0] === 'path') inlineUniquePath = true;
+  }
+  if (inlineUniquePath) {
+    {
+      db.exec(`
+        CREATE TABLE nodes_rebuild (
+          id         TEXT PRIMARY KEY,
+          email      TEXT NOT NULL,
+          parentId   TEXT,
+          name       TEXT NOT NULL,
+          path       TEXT NOT NULL,
+          isDir      INTEGER NOT NULL DEFAULT 0,
+          sizeBytes  INTEGER NOT NULL DEFAULT 0,
+          mime       TEXT,
+          storageId  TEXT,
+          deletedAt  TEXT,
+          createdAt  TEXT NOT NULL,
+          updatedAt  TEXT NOT NULL
+        );
+        INSERT INTO nodes_rebuild SELECT id, email, parentId, name, path, isDir, sizeBytes, mime, storageId, deletedAt, createdAt, updatedAt FROM nodes;
+        DROP TABLE nodes;
+        ALTER TABLE nodes_rebuild RENAME TO nodes;
+      `);
+    }
+  }
   db.exec(sql);
   // 老库补列（幂等）：P2 起用户组可指定默认存储策略
   const groupCols = db.prepare('PRAGMA table_info(groups)').all().map((c) => c.name);

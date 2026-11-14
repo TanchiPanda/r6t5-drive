@@ -3,6 +3,7 @@ import { db, migrate, getSetting, setSetting } from './db.js';
 import { ENV, DEFAULTS } from './config.js';
 import { hashPassword, randomPassword } from './lib/session.js';
 import { nowIso, genId } from './lib/format.js';
+import { sweepExpired as sweepExpiredUploads } from './services/chunks.js';
 
 migrate();
 
@@ -50,6 +51,10 @@ function bootstrapAdmin() {
 
 seedDefaultGroup();
 bootstrapAdmin();
+
+// P4：启动时清理一次过期分片上传会话，之后每小时扫一次（unref 不阻塞退出）
+sweepExpiredUploads();
+setInterval(sweepExpiredUploads, 3600 * 1000).unref();
 
 app.listen(ENV.PORT, '0.0.0.0', () => {
   console.log(`[boot] R6T5 Drive 已启动，端口 ${ENV.PORT}`);

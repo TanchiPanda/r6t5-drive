@@ -603,3 +603,71 @@ body `{ code }` → `{ ok: true, unlocked: true }`，并下发 httpOnly Cookie `
 ## P3-6 审计动作
 
 分享相关新增 `share_create`、`share_revoke`（`server/services/audit.js` 白名单已扩展）。
+
+---
+
+# P4 追加：传输增强（本段优先于上文冲突项）
+
+## P4-0 新增错误码
+
+| HTTP | code | 场景 |
+|---|---|---|
+| 404 | `upload_session_not_found` | 分片会话不存在 / 已清理 / 非本人 |
+| 410 | `upload_session_expired` | 分片会话过期（24h） |
+| 400 | `upload_part_out_of_range` | 分片序号越界 |
+| 409 | `upload_incomplete` | 分片未齐就 complete / 会话已完成又传片 |
+| 413 | `zip_too_large` | 打包或解压体积超上限（5 GB） |
+| 400 | `zip_too_many_entries` | 条目数超上限（10000） |
+| 400 | `zip_invalid` | 非 zip / 截断 / 中央目录缺失 |
+| 400 | `zip_slip_blocked` | 包内含 `../`、绝对路径、反斜杠或符号链接，整包拒绝 |
+
+## P4-1 分片上传 `/api/uploads`（需登录）
+
+| 接口 | 说明 |
+|---|---|
+| `POST /api/uploads/init` | body `{ parentPath, name, sizeBytes, chunkSize?, overwrite? }`；`chunkSize` 默认 8 MiB（1–64 MiB），`sizeBytes` ≤ 100 GB；201 `{ uploadId, chunkSize, totalChunks, received: [], expiresAt }`；同 (parentPath,name) 已有 active 会话时幂等返回同一会话；只读策略 → 403 `strategy_readonly`；同名已存在且未 `overwrite=1` → 409 `conflict` |
+| `GET /api/uploads` | 本人未过期会话：`{ items: [{ uploadId, parentPath, name, sizeBytes, chunkSize, totalChunks, receivedCount, received, expiresAt, status }] }` |
+| `GET /api/uploads/:id` | `{ item: {...同上, missing: [序号] } }`（断点续传依据）；他人/不存在 → 404 |
+| `PUT /api/uploads/:id/part/:index` | **请求体是分片原始二进制**（非 multipart）；非末片大小必须等于 `chunkSize`（不符 400 `invalid_input`，details 带 `expected/actual`）；200 `{ index, receivedCount, totalChunks }`；重复上传同 index 幂等覆盖 |
+| `POST /api/uploads/:id/complete` | 校验分片齐全（缺片 409 `upload_incomplete` + `missing`）→ 流式合并 → 校验总字节 → 配额三连（413/409/429）→ `driver.writeFromTemp` 落策略 → 201 `{ item, quota }`；重复调用幂等返回同一结果 |
+| `DELETE /api/uploads/:id` | 中止并清理临时目录 → `{ ok: true }`（幂等） |
+
+- 会话 24 小时过期；`server/index.js` 启动时与每小时 `sweepExpired()` 清理过期会话与临时目录
+- 临时目录：`<STORAGE_ROOT>/.tmp/chunks/<uploadId>/`
+- 同一会话并发 complete 由内存锁串行化，第二个请求返回 409
+- `completed` 会话行保留（用于幂等），列表与清理均排除
+
+## P4-2 打包下载 `POST /api/files/zip`（需登录）
+
+body `{ paths: [...] }`，返回 **zip 二进制流**：
+- 响应头：`Content-Type: application/zip`、`Content-Disposition: attachment; filename*=UTF-8''<name>.zip`、`X-Archive-Entries: <n>`
+- 目录递归展开、按 path 去重；写响应头之前完成预检（条目 > 10000 → `zip_too_many_entries`；未压缩总字节 > 5 GB → `zip_too_large`；路径不存在 → 404）
+- ZIP 内路径为相对公共父目录的路径，UTF-8 文件名（flag bit 11）；deflate(8)，已压缩媒体可 store(0)
+- 客户端断开时 `writer.abort()` 释放上游流
+
+## P4-3 预检 `POST /api/files/zip/plan`（需登录）
+
+body `{ paths }` → `{ files: [{ name, path, sizeBytes }], totalBytes, entries, tooLarge }`
+
+## P4-4 在线压缩 `POST /api/files/compress`（需登录）
+
+body `{ paths, targetPath?, name? }` → 201 `{ item: { name, path, type:'file', sizeBytes, mime, updatedAt, storageId }, entries }`
+- 目标目录默认取首个条目所在目录；`name` 默认 `<首条目名>.zip`；同名 → 409 `conflict`
+- 上限同打包；写临时 zip → `writeFromTemp` 落策略 → `insertNode`（mime `application/zip`）→ 记上传流量 → 审计 `compress`
+- 只读目标 → 403 `strategy_readonly`；配额 413/409/429
+
+## P4-5 解压 `POST /api/files/extract`（需登录）
+
+body `{ path, targetPath? }` → 201 `{ extracted, skipped: [{name, reason}], totalBytes }`
+- 只接受 `.zip`；`targetPath` 默认 zip 所在目录（不存在时自动补建目录节点）
+- **zip slip 防护**：条目名含 `..` 段、以 `/` 或盘符开头、含反斜杠、符号链接条目、空名 → 400 `zip_slip_blocked`（整包中止，不落任何文件）
+- 上限：条目 ≤ 10000、解压总字节 ≤ 5 GB、单条目 ≤ 单文件配额
+- 先全量解到 `<STORAGE_ROOT>/.tmp/extract/<id>/` 校验通过后再逐个落策略；同名跳过并在 `skipped` 返回
+- 只读目标 → 403 `strategy_readonly`；审计 `extract`
+
+## P4-6 ZIP 实现说明（`server/lib/zip.js`）
+
+- 自研 ZIP32（不引依赖）：CRC32 查表、store/deflate 流式、UTF-8 flag(0x800)、数据描述符(bit3)、Central Directory + EOCD
+- Reader：EOCD → Central Directory → Local File Header，`createInflateRaw` 流式解压并校验 CRC/尺寸
+- ZIP64（>4 GiB）与 AES 加密不支持：超出按上限拒绝（`zip_too_large` / `zip_invalid`）
+- 兼容性实测：`unzip -t` 通过；能被系统 `zip` 生成的包反向读回（含中文目录名）

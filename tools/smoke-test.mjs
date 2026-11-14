@@ -350,6 +350,20 @@ function check(name, cond, detail) {
 }
 
 
+
+// ================= 回归：软删后同名重建（nodes.path 部分唯一索引） =================
+{
+  const payload = new TextEncoder().encode('tombstone test');
+  let fd = new FormData(); fd.append('file', new Blob([payload]), 'reborn.txt');
+  const up1 = await req('POST', '/api/files/upload?path=' + encodeURIComponent('alice@x.com'), { cookie: jar.user, raw: { body: fd, headers: {} } });
+  check('22a. 首次上传 reborn.txt 201', up1.status === 201, `status=${up1.status}`);
+  const del = await req('DELETE', '/api/files?path=' + encodeURIComponent('alice@x.com/reborn.txt'), { cookie: jar.user });
+  check('22b. 软删成功', del.status === 200 && del.json?.trashed >= 1, `status=${del.status} trashed=${del.json?.trashed}`);
+  fd = new FormData(); fd.append('file', new Blob([payload]), 'reborn.txt');
+  const up2 = await req('POST', '/api/files/upload?path=' + encodeURIComponent('alice@x.com'), { cookie: jar.user, raw: { body: fd, headers: {} } });
+  check('22c. 软删后同名重建 201（不再是 500 UNIQUE）', up2.status === 201, `status=${up2.status} code=${up2.json?.error?.code}`);
+}
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n汇总：${results.length - failed.length}/${results.length} 通过`);
 process.exit(failed.length ? 1 : 0);

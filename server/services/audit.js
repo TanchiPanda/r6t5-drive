@@ -4,7 +4,7 @@ import { nowIso, truncateIp } from '../lib/format.js';
 const VALID_ACTIONS = new Set([
   'login', 'logout', 'upload', 'download', 'delete', 'restore', 'rename', 'move',
   'mkdir', 'admin_login', 'settings_update', 'group_create', 'storage_create',
-  'user_disable', 'share_create', 'share_revoke',
+  'user_disable', 'share_create', 'share_revoke', 'compress', 'extract',
 ]);
 
 export function writeAudit({ email, action, target = null, bytes = null, ip = null, detail = null }) {
