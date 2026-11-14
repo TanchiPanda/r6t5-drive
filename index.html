@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>R6T5 Drive · 自运营网盘</title>
+<meta name="description" content="R6T5 Drive：文件存在自己的对象存储里，账号走 R6T5 Hub，支持分享、回收站与 Docker 自托管。">
+<style>
+:root{
+  --bg:#0e1512;--panel:#151f1b;--line:rgba(255,255,255,.09);
+  --fg:#e6f0ea;--muted:#93a89e;--acc:#4a9e6e;--acc2:#ffd54f;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:radial-gradient(1200px 600px at 15% -10%,#17352a 0%,transparent 60%),var(--bg);color:var(--fg);
+  font-family:"Comic Sans MS","Chalkboard SE","Microsoft Yahei","PingFang SC",system-ui,sans-serif;line-height:1.7}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+header{display:flex;align-items:center;gap:14px;padding:18px 0;border-bottom:1px solid var(--line)}
+.logo{font-weight:700;font-size:19px;display:flex;align-items:center;gap:9px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 12px var(--acc)}
+nav{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+nav a{color:var(--muted);text-decoration:none;font-size:13.5px;padding:6px 11px;border-radius:8px}
+nav a:hover{color:var(--fg);background:rgba(255,255,255,.05)}
+.hero{padding:72px 0 46px}
+.tag{display:inline-block;font-size:12px;color:var(--acc2);border:1px solid rgba(255,213,79,.35);
+  background:rgba(255,213,79,.08);padding:4px 10px;border-radius:999px;margin-bottom:18px}
+h1{font-size:clamp(30px,5vw,46px);line-height:1.25;letter-spacing:-.5px}
+h1 em{font-style:normal;color:var(--acc2)}
+.lede{color:var(--muted);max-width:640px;margin-top:14px;font-size:15.5px}
+.cta{display:flex;gap:10px;margin-top:26px;flex-wrap:wrap}
+.btn{padding:11px 20px;border-radius:10px;font-size:14px;text-decoration:none;border:1px solid var(--line);color:var(--fg);background:rgba(255,255,255,.04)}
+.btn.primary{background:linear-gradient(135deg,#3f8d61,#55b47c);border:none;font-weight:700;color:#fff}
+.btn.ghost:hover{background:rgba(255,255,255,.08)}
+section{padding:52px 0;border-top:1px solid var(--line)}
+h2{font-size:24px;margin-bottom:8px}
+.sub{color:var(--muted);font-size:14px;margin-bottom:26px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
+.card h3{font-size:16px;margin-bottom:8px}
+.card p{color:var(--muted);font-size:13.5px;line-height:1.75}
+.ico{font-size:20px;display:block;margin-bottom:10px}
+.form3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.step{border-left:3px solid var(--acc);padding:4px 0 4px 16px}
+.step b{display:block;margin-bottom:4px}
+.step span{color:var(--muted);font-size:13.5px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:500}
+.yes{color:#7ed6a5}.no{color:#7a8e84}
+.roadmap{display:flex;flex-direction:column;gap:10px}
+.rm{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.rm .p{font-size:11px;letter-spacing:.5px;color:#000;background:var(--acc2);padding:2px 8px;border-radius:6px;font-weight:700;white-space:nowrap}
+.rm .p.done{background:#7ed6a5}
+.rm .p.next{background:#93a89e}
+.rm div b{font-size:14.5px}
+.rm div p{color:var(--muted);font-size:13px;margin:3px 0 0}
+footer{padding:36px 0 60px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+footer a{color:var(--muted);text-decoration:none}
+footer a:hover{color:var(--fg)}
+@media(max-width:640px){.hero{padding:48px 0 30px}nav{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="dot"></span>R6T5 Drive</div>
+    <nav>
+      <a href="#features">能力</a>
+      <a href="#deploy">部署</a>
+      <a href="#compare">对比</a>
+      <a href="#roadmap">路线图</a>
+      <a class="btn ghost" style="color:var(--fg);border:1px solid var(--line);padding:6px 12px" href="https://myacc.r6t5.dpdns.org">登录</a>
+    </nav>
+  </header>
+
+  <section class="hero" style="border:none">
+    <span class="tag">自运营 · 不依赖第三方网盘</span>
+    <h1>自己的网盘，<br>自己的<em>存储与规则</em>。</h1>
+    <p class="lede">文件存在你自己的对象存储（Cloudflare R2 / S3 / WebDAV），账号走 R6T5 Hub 通行证。支持分享链接、回收站、目录树与秒传去重，也能用 Docker 一键自托管。</p>
+    <div class="cta">
+      <a class="btn primary" href="https://myacc.r6t5.dpdns.org">用 Hub 账号登录 →</a>
+      <a class="btn ghost" href="#deploy">自托管部署</a>
+    </div>
+  </section>
+
+  <section id="features">
+    <h2>能做什么</h2>
+    <p class="sub">面向个人与小团队的文件管理，存储层可替换，不锁定服务商。</p>
+    <div class="grid">
+      <div class="card"><span class="ico">🗂</span><h3>目录树与拖拽上传</h3><p>多级文件夹、批量上传、断点重传，大文件分片走对象存储直传，不经过 Worker 中转。</p></div>
+      <div class="card"><span class="ico">🔗</span><h3>分享与权限</h3><p>链接分享可设置密码、有效期、下载次数；目录分享只读、可追溯访问记录。</p></div>
+      <div class="card"><span class="ico">⚡</span><h3>秒传与去重</h3><p>按内容哈希去重，同一文件重复上传直接命中已有对象，省流量也省空间。</p></div>
+      <div class="card"><span class="ico">♻️</span><h3>回收站</h3><p>删除先进回收站，保留 30 天，可恢复或彻底清除；管理端可见容量占用。</p></div>
+      <div class="card"><span class="ico">🔐</span><h3>Hub 通行证登录</h3><p>与 r6t5 生态共用账号，一处登录，网盘、文档站、钱包通行。</p></div>
+      <div class="card"><span class="ico">🧩</span><h3>开放 API</h3><p>提供上传、列表、分享、回收站接口，方便接进自己的文档站或自动化流程。</p></div>
+    </div>
+  </section>
+
+  <section id="deploy">
+    <h2>三种形态</h2>
+    <p class="sub">从「注册就能用」到「完全自己管」，同一套代码。</p>
+    <div class="form3">
+      <div class="card"><h3>托管版</h3><p>用 R6T5 提供的域名与存储，注册即用，配额按账号发放。</p></div>
+      <div class="card"><h3>Docker 自托管</h3><p><code>docker run</code> 起一个实例，存储接自己的 R2 / S3 / 本地磁盘，数据不出自己的机器。</p></div>
+      <div class="card"><h3>嵌入式</h3><p>把文件选择器与上传组件嵌进自己的站点，鉴权仍走 Hub。</p></div>
+    </div>
+  </section>
+
+  <section id="compare">
+    <h2>和公共网盘的区别</h2>
+    <p class="sub">不评判别的产品，只说清自己的取舍。</p>
+    <div class="card" style="overflow-x:auto">
+      <table>
+        <tr><th style="width:38%">维度</th><th>R6T5 Drive</th><th>公共网盘</th></tr>
+        <tr><td>存储位置</td><td class="yes">自己的对象存储 / 磁盘</td><td class="no">服务商机房</td></tr>
+        <tr><td>账号体系</td><td class="yes">R6T5 Hub 通行证</td><td class="no">各自独立账号</td></tr>
+        <tr><td>限速与配额</td><td class="yes">由自己配置</td><td class="no">按会员等级</td></tr>
+        <tr><td>数据导出</td><td class="yes">对象存储直读，随时迁走</td><td class="no">受客户端限制</td></tr>
+        <tr><td>可自托管</td><td class="yes">支持 Docker</td><td class="no">不支持</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section id="roadmap">
+    <h2>路线图</h2>
+    <p class="sub">先把「能用」做出来，再谈客户端与高级能力。</p>
+    <div class="roadmap">
+      <div class="rm"><span class="p done">P0</span><div><b>项目骨架与介绍页</b><p>仓库、站点、架构说明；确定存储与鉴权方案。</p></div></div>
+      <div class="rm"><span class="p next">P1</span><div><b>最小可用：上传 / 列表 / 下载 / 删除</b><p>Worker + R2，Hub 登录换 JWT，单用户空间。</p></div></div>
+      <div class="rm"><span class="p next">P2</span><div><b>目录树、分享链接、回收站、秒传</b><p>元数据表与直传签名；分享密码与有效期。</p></div></div>
+      <div class="rm"><span class="p next">P3</span><div><b>Docker 自托管与多存储后端</b><p>S3 / WebDAV / 本地磁盘适配，配置化部署。</p></div></div>
+      <div class="rm"><span class="p next">P4</span><div><b>配额、团队空间、开放 API</b><p>按账号计容量，团队共享目录，对外提供 API。</p></div></div>
+    </div>
+  </section>
+
+  <footer>
+    <div>R6T5 Drive · 自运营网盘服务</div>
+    <div><a href="https://rtdocs.r6t5.dpdns.org">文档站</a> · <a href="https://myacc.r6t5.dpdns.org">账号中心</a> · <a href="https://github.com/TanchiPanda/r6t5-drive">GitHub</a></div>
+  </footer>
+</div>
+</body>
+</html>
