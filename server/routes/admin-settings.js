@@ -14,6 +14,7 @@ function readSettings() {
     siteName,
     publicUrl,
     defaultGroupId,
+    defaultStorageId: getSetting('defaultStorageId', null),
     allowSignup: getSetting('allowSignup', 'false') === 'true',
     trashRetentionDays: Number(getSetting('trashRetentionDays', '30')),
     themeDefault: getSetting('themeDefault', 'dark'),
@@ -48,6 +49,16 @@ router.patch('/', (req, res, next) => {
       const g = body.defaultGroupId ? db.prepare('SELECT id FROM groups WHERE id = ?').get(body.defaultGroupId) : null;
       if (body.defaultGroupId && !g) throw notFound('默认用户组不存在');
       setSetting('defaultGroupId', body.defaultGroupId || null);
+    }
+    if (body.defaultStorageId !== undefined) {
+      const v = body.defaultStorageId;
+      if (v == null || v === '') {
+        setSetting('defaultStorageId', null);
+      } else {
+        const s = db.prepare('SELECT id FROM storage_strategies WHERE id = ?').get(v);
+        if (!s) throw badRequest('invalid_input', '默认存储策略不存在', { field: 'defaultStorageId' });
+        setSetting('defaultStorageId', v);
+      }
     }
     if (body.allowSignup != null) setSetting('allowSignup', body.allowSignup ? 'true' : 'false');
     if (body.trashRetentionDays != null) {

@@ -114,3 +114,7 @@ td .row-actions{display:flex;gap:var(--s2);flex-wrap:wrap}
 /* 空态时不要留一排行内表头，避免"表头 + 空框"的割裂感 */
 .table-wrap:has(.empty) thead,
 .table-wrap:has(.empty) .table thead { display: none; }
+
+/* ---------- P2 文件系统：徽标 / 操作按钮不折行 ---------- */
+.badge{white-space:nowrap}
+td .row-actions .btn{white-space:nowrap}

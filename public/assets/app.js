@@ -162,11 +162,23 @@
       path: '',
       crumbs: [],
       items: [],
+      strategy: null,
       view: localStorage.getItem('r6t5.view') || 'list',
       searching: false,
       q: ''
     }
   };
+
+  var STRATEGY_TYPE_LABEL = { volume: '本地卷', s3: 'S3', github: 'GitHub' };
+  var MATCH_LABEL = { binding: '目录绑定', group: '用户组默认', local: '本地默认' };
+
+  function strategyTypeText(t) { return STRATEGY_TYPE_LABEL[t] || t || '—'; }
+  function strategyReadOnly() { return !!(Files.state.strategy && Files.state.strategy.readOnly === true); }
+  function readOnlyTip() {
+    var st = Files.state.strategy;
+    var t = st ? strategyTypeText(st.type) : '';
+    return '该目录为只读策略（' + t + '），不能写入';
+  }
 
   async function initFiles() {
     bindLogout();
@@ -199,9 +211,40 @@
     var res = await guardedGet('/api/files', { path: Files.state.path });
     Files.state.crumbs = res.crumbs || [];
     Files.state.items = res.items || [];
+    Files.state.strategy = res.strategy || null;
     if (res.quota) { Files.quota = res.quota; renderQuota(); }
     renderCrumbs();
+    renderStrategyBadge();
+    applyReadOnly();
     renderItems();
+  }
+
+  function renderStrategyBadge() {
+    var box = document.getElementById('strategy-badge');
+    if (!box) return;
+    var st = Files.state.strategy;
+    if (!st || !st.name) { box.innerHTML = ''; return; }
+    var matched = MATCH_LABEL[st.matchedBy] || st.matchedBy || '—';
+    var tip = '策略：' + st.name + ' · ' + strategyTypeText(st.type) + ' · 命中方式：' + matched +
+      (st.bindingPath ? ' · 子目录 ' + st.bindingPath : '');
+    box.innerHTML =
+      '<span class="badge" title="' + R6T5.esc(tip) + '">' +
+      '<span class="dot-s"></span>' + R6T5.esc(st.name) +
+      '<span class="muted">·</span>' + R6T5.esc(strategyTypeText(st.type)) +
+      (st.readOnly ? '<span class="badge warn">只读</span>' : '') +
+      '</span>';
+  }
+
+  function applyReadOnly() {
+    var ro = strategyReadOnly();
+    var upload = document.getElementById('upload-btn');
+    var mkdir = document.getElementById('mkdir-btn');
+    var tip = readOnlyTip();
+    [upload, mkdir].forEach(function (btn) {
+      if (!btn) return;
+      btn.disabled = ro;
+      btn.title = ro ? tip : '';
+    });
   }
 
   function renderCrumbs() {
@@ -244,10 +287,11 @@
         var nameHtml = hlName(it.name, q);
         var meta = it.type === 'dir'
           ? (it.itemCount != null ? it.itemCount + ' 项' : '文件夹')
-          : R6T5.fmtBytes(it.sizeBytes);
+          : (it.sizeBytes == null ? '—' : R6T5.fmtBytes(it.sizeBytes));
+        var remote = it.remote ? '<span class="badge acc">云端</span>' : '';
         return '<div class="file-card" data-path="' + R6T5.esc(it.path) + '" data-type="' + it.type + '">' +
           '<div class="fic">' + iconFor(it) + '</div>' +
-          '<div class="fname" title="' + R6T5.esc(it.name) + '">' + nameHtml + '</div>' +
+          '<div class="fname" title="' + R6T5.esc(it.name) + '">' + nameHtml + remote + '</div>' +
           '<div class="meta"><span>' + meta + '</span><span>' + R6T5.fmtAgo(it.updatedAt) + '</span></div>' +
           '<div class="ops">' + opsHtml(it) + '</div></div>';
       }).join('');
@@ -258,10 +302,11 @@
         '<th>名称</th><th class="num">大小</th><th>修改时间</th><th></th></tr></thead><tbody>' +
         items.map(function (it) {
           var nameHtml = hlName(it.name, q);
-          var size = it.type === 'dir' ? '—' : R6T5.fmtBytes(it.sizeBytes);
+          var size = it.type === 'dir' ? '—' : (it.sizeBytes == null ? '—' : R6T5.fmtBytes(it.sizeBytes));
+          var remote = it.remote ? '<span class="badge acc">云端</span>' : '';
           return '<tr class="file-row" data-path="' + R6T5.esc(it.path) + '" data-type="' + it.type + '">' +
             '<td><div class="name"><span class="fic">' + iconFor(it) + '</span>' +
-            '<span class="fname" title="' + R6T5.esc(it.name) + '">' + nameHtml + '</span></div></td>' +
+            '<span class="fname" title="' + R6T5.esc(it.name) + '">' + nameHtml + '</span>' + remote + '</div></td>' +
             '<td class="num meta">' + size + '</td>' +
             '<td class="when">' + R6T5.fmtAgo(it.updatedAt) + '</td>' +
             '<td><div class="ops">' + opsHtml(it) + '</div></td></tr>';
@@ -275,9 +320,11 @@
     if (it.type === 'file') {
       ops += '<button class="btn sm ghost" data-op="download" title="下载">↓</button>';
     }
-    ops += '<button class="btn sm ghost" data-op="rename" title="重命名">✎</button>' +
-      '<button class="btn sm ghost" data-op="move" title="移动">➦</button>' +
-      '<button class="btn sm ghost danger" data-op="delete" title="删除">✕</button>';
+    var ro = strategyReadOnly();
+    var dis = ro ? ' disabled title="' + R6T5.esc(readOnlyTip()) + '"' : '';
+    ops += '<button class="btn sm ghost" data-op="rename" title="重命名"' + dis + '>✎</button>' +
+      '<button class="btn sm ghost" data-op="move" title="移动"' + dis + '>➦</button>' +
+      '<button class="btn sm ghost danger" data-op="delete" title="删除"' + dis + '>✕</button>';
     return ops;
   }
 
@@ -333,6 +380,10 @@
       dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('drag'); });
     });
     dz.addEventListener('drop', function (e) {
+      if (strategyReadOnly()) {
+        R6T5.toast(readOnlyTip(), 'warn');
+        return;
+      }
       if (e.dataTransfer && e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
     });
 
@@ -381,6 +432,10 @@
   /* ---------- 上传（XHR 拿进度） ---------- */
 
   function uploadFiles(fileList) {
+    if (strategyReadOnly()) {
+      R6T5.toast(readOnlyTip(), 'warn');
+      return;
+    }
     var files = Array.prototype.slice.call(fileList);
     if (!files.length) return;
     files.forEach(uploadOne);

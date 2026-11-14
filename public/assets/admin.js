@@ -433,35 +433,54 @@
     });
   }
 
-  /* ---------- 存储策略 storage ---------- */
+  /* ---------- 文件系统：存储策略 / 目录绑定 / 解析预览 ---------- */
   let storageTypes = [];
   let currentType = null;
+  let strategies = [];
+  let editingStrategy = null;
+  let testState = { status: 'untested', message: '' };
+
+  const TYPE_LABEL = { volume: '本地卷', s3: 'S3', github: 'GitHub' };
+  const TYPE_BADGE = { volume: '', s3: 'info', github: 'warn' };
+  const MATCH_LABEL = { binding: '目录绑定', group: '用户组默认', local: '本地默认' };
+
+  function typeText(t) { return TYPE_LABEL[t] || t; }
 
   async function initStorage() {
     Admin.bindLogout();
     await Admin.requireAdmin();
     await loadStorageTypes();
     await loadStorageList();
+    await loadBindings();
+    await prefillResolvePath();
 
     const add = Admin.$('#btn-add-strategy');
-    if (add) add.addEventListener('click', openAddModal);
+    if (add) add.addEventListener('click', () => openStrategyModal(null));
     const form = Admin.$('#strategy-form');
     if (form) form.addEventListener('submit', onStrategySubmit);
     const typeSel = Admin.$('#st-type');
     if (typeSel) typeSel.addEventListener('change', () => renderTypeDisclosure());
+    const testBtn = Admin.$('#st-test');
+    if (testBtn) testBtn.addEventListener('click', onTestConnection);
+
+    const bAdd = Admin.$('#btn-add-binding');
+    if (bAdd) bAdd.addEventListener('click', () => openBindingModal(null));
+    const bForm = Admin.$('#binding-form');
+    if (bForm) bForm.addEventListener('submit', onBindingSubmit);
+    Admin.$$('input[name="bd-scope"]').forEach(r => r.addEventListener('change', syncScopeField));
+
+    const rsBtn = Admin.$('#rs-resolve');
+    if (rsBtn) rsBtn.addEventListener('click', doResolve);
+    const rsPath = Admin.$('#rs-path');
+    if (rsPath) rsPath.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doResolve(); } });
 
     // 自测参数：?open=modal-add 打开弹窗；生产不带参数为关闭态
-    if (new URLSearchParams(location.search).get('open') === 'modal-add') openAddModal();
+    if (new URLSearchParams(location.search).get('open') === 'modal-add') openStrategyModal(null);
   }
 
   async function loadStorageTypes() {
     try { const r = await Admin.get('/api/admin/storage/types'); storageTypes = (r && r.items) || []; }
     catch (e) { storageTypes = []; Admin.toastErr(e); }
-  }
-
-  function typeLabel(t) {
-    const hit = storageTypes.find(x => x.type === t);
-    return hit ? hit.label : t;
   }
 
   async function loadStorageList() {
@@ -471,26 +490,38 @@
     let d;
     try { d = await Admin.get('/api/admin/storage'); }
     catch (e) { Admin.alert(alertBox, e, '存储策略读取失败'); return; }
-    const items = (d && d.items) || [];
-    if (!items.length) {
+    strategies = (d && d.items) || [];
+    if (!strategies.length) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="8"><div class="empty"><div class="ico">▢</div><h3>还没有存储策略</h3><p>添加一条本地数据卷后，站点才能接收文件。</p><div class="actions"><button class="btn primary" type="button" id="empty-add">添加策略</button></div></div></td></tr>';
       const ea = Admin.$('#empty-add');
-      if (ea) ea.addEventListener('click', openAddModal);
+      if (ea) ea.addEventListener('click', () => openStrategyModal(null));
       return;
     }
-    tbody.innerHTML = items.map(s => {
+    tbody.innerHTML = strategies.map(s => {
       const cap = s.capacityBytes || 0, used = s.usedBytes || 0;
       const pct = cap ? Math.min(100, Math.round(used / cap * 100)) : 0;
       const barCls = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : '';
+      const capBadge = s.readOnly ? '<span class="badge warn">只读</span>' : '<span class="badge ok">可写</span>';
+      const health = s.health || {};
+      const healthBadge = health.ok === true
+        ? '<span class="badge ok"><span class="dot-s"></span>正常</span>'
+        : health.ok === false
+          ? '<span class="badge danger"><span class="dot-s"></span>异常</span>'
+          : '<span class="badge"><span class="dot-s"></span>未检测</span>';
+      const masked = Object.entries(s.configMasked || {})
+        .map(([k, v]) => R6T5.esc(k) + '=' + R6T5.esc(v)).join(' · ');
       return '<tr data-id="' + R6T5.esc(s.id) + '">' +
-        '<td><div class="name">' + R6T5.esc(s.name) + '</div><div class="faint small mono-sm">' + R6T5.esc(s.type) + '</div></td>' +
-        '<td>' + R6T5.esc(s.region || '—') + '</td>' +
+        '<td><div class="name">' + R6T5.esc(s.name) + '</div></td>' +
+        '<td><span class="badge ' + (TYPE_BADGE[s.type] || '') + '">' + R6T5.esc(typeText(s.type)) + '</span></td>' +
+        '<td>' + R6T5.esc(s.region || '—') + (masked ? '<div class="faint small mono-sm mt1">' + masked + '</div>' : '') + '</td>' +
         '<td class="num">' + Admin.bytes(cap) + '</td>' +
         '<td><div class="row tight"><div class="bar flex1 ' + barCls + '"><i style="width:' + pct + '%"></i></div><span class="small muted">' + pct + '%</span></div><div class="faint small">已用 ' + Admin.bytes(used) + '</div></td>' +
-        '<td>' + (s.readOnly ? '<span class="badge warn">只读</span>' : '<span class="badge ok">可写</span>') + '</td>' +
-        '<td>' + (s.enabled ? '<span class="badge ok">启用</span>' : '<span class="badge">停用</span>') + '</td>' +
-        '<td class="num">' + (s.fileCount ?? 0) + '</td>' +
-        '<td><div class="row-actions"><button class="btn sm" type="button" data-act="test">测试连通性</button></div></td>' +
+        '<td>' + capBadge + '</td>' +
+        '<td title="' + R6T5.esc(health.message || '') + '">' + healthBadge +
+        (health.message ? '<div class="faint small">' + R6T5.esc(health.message) + '</div>' : '') + '</td>' +
+        '<td><div class="row-actions"><button class="btn sm" type="button" data-act="test">测试</button>' +
+        '<button class="btn sm ghost" type="button" data-act="edit">编辑</button>' +
+        '<button class="btn sm danger" type="button" data-act="del">删除</button></div></td>' +
         '</tr>';
     }).join('');
 
@@ -506,19 +537,50 @@
         finally { btn.disabled = false; }
       });
     });
+    tbody.querySelectorAll('[data-act="edit"]').forEach(btn =>
+      btn.addEventListener('click', () => openStrategyModal(strategies.find(x => x.id === btn.closest('tr').dataset.id))));
+    tbody.querySelectorAll('[data-act="del"]').forEach(btn =>
+      btn.addEventListener('click', () => onStrategyDelete(strategies.find(x => x.id === btn.closest('tr').dataset.id))));
   }
 
-  function openAddModal() {
+  async function onStrategyDelete(s) {
+    if (!s) return;
+    if (!confirm('确定删除策略「' + s.name + '」？删除前需确认该策略下没有文件。')) return;
+    try {
+      await Admin.del('/api/admin/storage/' + encodeURIComponent(s.id));
+      R6T5.toast('策略已删除', 'ok');
+      await loadStorageList();
+    } catch (e) { Admin.toastErr(e); }
+  }
+
+  function openStrategyModal(s) {
+    editingStrategy = s || null;
     const m = Admin.$('#m-add');
     if (!m) return;
+    Admin.$('#m-add-title').textContent = s ? '编辑存储策略' : '添加存储策略';
     const typeSel = Admin.$('#st-type');
     typeSel.innerHTML = storageTypes.map(t =>
-      '<option value="' + R6T5.esc(t.type) + '"' + (t.status === 'planned' ? ' disabled' : '') + '>' +
-      R6T5.esc(t.label) + (t.status === 'planned' ? '（P2）' : '') + '</option>'
+      '<option value="' + R6T5.esc(t.type) + '">' + R6T5.esc(t.label) + '</option>'
     ).join('');
-    currentType = storageTypes.find(t => t.status === 'ready') || storageTypes[0];
+    currentType = storageTypes.find(t => t.type === (s ? s.type : 'volume')) || storageTypes[0];
     if (currentType) typeSel.value = currentType.type;
+    Admin.$('#st-name').value = s ? s.name : '';
+    Admin.$('#st-region').value = s ? (s.region || '') : '';
+    const cap = s ? Admin.fromBytes(s.capacityBytes || 0) : { value: '', unit: 'GB' };
+    Admin.$('#st-capacity').value = cap.value;
+    Admin.$('#st-capacity-unit').value = cap.unit;
+    Admin.$('#st-readonly').checked = !!(s && s.readOnly);
+    Admin.$('#st-err').textContent = '';
+    resetTestNote();
     renderTypeDisclosure();
+    if (s) {
+      // 回填非密钥配置；密钥类（**** 末四位）不回显，留空待填
+      const masked = s.configMasked || {};
+      Admin.$$('#st-dyn-fields [data-dyn]').forEach(i => {
+        const k = i.dataset.dyn;
+        if (masked[k] != null && !/^\*\*\*\*/.test(String(masked[k]))) i.value = masked[k];
+      });
+    }
     R6T5.modal.open('#m-add');
   }
 
@@ -531,7 +593,6 @@
     const dyn = Admin.$('#st-dyn-fields');
     if (!currentType) return;
 
-    const planned = currentType.status === 'planned';
     const pub = (currentType.publicFields || []).map(f =>
       '<div class="li"><span class="key">' + R6T5.esc(f.key) + '</span><span>' + R6T5.esc(f.label) + '</span></div>'
     ).join('');
@@ -543,26 +604,81 @@
       '<div class="dc-block"><div class="dc-title">将对普通用户展示</div><div class="dc-list">' + (pub || '<div class="faint">无</div>') + '</div></div>' +
       '<div class="dc-block"><div class="dc-title">仅服务端保存（永不下发）</div><div class="dc-list">' + (priv || '<div class="faint">无</div>') + '</div></div>' +
       '<div class="notice">' + R6T5.esc(currentType.notice || '') + '</div>' +
-      (currentType.docsHint ? '<div class="faint small mt2">' + R6T5.esc(currentType.docsHint) + '</div>' : '') +
-      (planned ? '<div class="note warn mt3"><span class="ico">!</span><div>该类型为 P2 规划能力，当前版本不允许创建。</div></div>' : '');
+      (currentType.docsHint ? '<div class="faint small mt2">' + R6T5.esc(currentType.docsHint) + '</div>' : '');
 
     dyn.innerHTML = (currentType.fields || []).map(f => {
-      const inputType = f.secret ? 'password' : (f.type === 'password' ? 'password' : 'text');
-      return '<div class="field"><label>' + R6T5.esc(f.label) + (f.required ? ' *' : '') + '</label>' +
-        '<input class="input" data-dyn="' + R6T5.esc(f.key) + '" type="' + inputType + '" placeholder="' + R6T5.esc(f.placeholder || '') + '" value="' + R6T5.esc(f.default || '') + '">' +
-        (f.help ? '<span class="help">' + R6T5.esc(f.help) + '</span>' : '') + '</div>';
+      const secretHint = f.secret ? '<span class="help warn">仅存服务端，不会回显</span>' : '';
+      let control;
+      if (f.type === 'select') {
+        const opts = (f.options || []).map(o =>
+          '<option value="' + R6T5.esc(o.value) + '"' + (String(f.default) === String(o.value) ? ' selected' : '') + '>' +
+          R6T5.esc(o.label) + '</option>').join('');
+        control = '<select class="select" data-dyn="' + R6T5.esc(f.key) + '">' + opts + '</select>';
+      } else {
+        const inputType = f.type === 'password' || f.secret ? 'password' : 'text';
+        control = '<input class="input" data-dyn="' + R6T5.esc(f.key) + '" type="' + inputType + '" placeholder="' + R6T5.esc(f.placeholder || '') + '" value="' + R6T5.esc(f.default || '') + '">';
+      }
+      return '<div class="field"><label>' + R6T5.esc(f.label) + (f.required ? ' *' : '') + '</label>' + control +
+        (f.help ? '<span class="help">' + R6T5.esc(f.help) + '</span>' : '') + secretHint + '</div>';
     }).join('');
 
-    const sync = () => { submit.disabled = !(ack.checked && !planned); };
+    // GitHub 策略强制只读，不可取消
+    const ro = Admin.$('#st-readonly');
+    if (currentType.type === 'github') { ro.checked = true; ro.disabled = true; }
+    else { ro.disabled = false; }
+
+    // 切换类型后旧的自检结果作废，清空测试提示
+    resetTestNote();
+
+    const sync = () => { submit.disabled = !ack.checked; };
     ack.onchange = sync;
     sync();
+  }
+
+  function resetTestNote() {
+    testState = { status: 'untested', message: '' };
+    const note = Admin.$('#st-test-note');
+    if (note) note.innerHTML = '';
+    const warn = Admin.$('#st-test-warn');
+    if (warn) { warn.textContent = ''; warn.className = 'help'; }
+  }
+
+  function readDynConfig() {
+    const config = {};
+    Admin.$$('#st-dyn-fields [data-dyn]').forEach(i => { config[i.dataset.dyn] = i.value.trim(); });
+    return config;
+  }
+
+  async function onTestConnection() {
+    if (!currentType) return;
+    const btn = Admin.$('#st-test');
+    btn.disabled = true;
+    const config = readDynConfig();
+    try {
+      const r = await Admin.post('/api/admin/storage/validate', { type: currentType.type, config });
+      const ok = !!(r && r.ok);
+      testState = { status: ok ? 'ok' : 'fail', message: (r && r.message) || (ok ? '测试通过' : '测试未通过') };
+      Admin.$('#st-test-note').innerHTML =
+        '<div class="note ' + (ok ? 'ok' : 'danger') + '"><span class="ico">' + (ok ? '✓' : '⚠') + '</span><div>' +
+        R6T5.esc(testState.message) + '</div></div>';
+      const warn = Admin.$('#st-test-warn');
+      if (ok) { warn.textContent = '自检通过'; warn.className = 'help ok'; }
+      else { warn.textContent = '未通过自检，仍可保存，建议先修正配置'; warn.className = 'help warn'; }
+    } catch (e) {
+      testState = { status: 'fail', message: (e && e.message) || '测试失败' };
+      Admin.$('#st-test-note').innerHTML =
+        '<div class="note danger"><span class="ico">⚠</span><div>' + R6T5.esc(testState.message) + '</div></div>';
+      const warn = Admin.$('#st-test-warn');
+      warn.textContent = '未通过自检，仍可保存，建议先修正配置';
+      warn.className = 'help warn';
+      Admin.toastErr(e);
+    } finally { btn.disabled = false; }
   }
 
   async function onStrategySubmit(ev) {
     ev.preventDefault();
     const err = Admin.$('#st-err');
-    const planned = currentType && currentType.status === 'planned';
-    if (!currentType || planned) { err.textContent = '该类型当前版本不允许创建'; return; }
+    if (!currentType) { err.textContent = '请选择存储类型'; return; }
 
     const name = Admin.$('#st-name').value.trim();
     const region = Admin.$('#st-region').value.trim();
@@ -574,22 +690,147 @@
     if (capBytes == null) { err.textContent = '请填写合法容量'; return; }
     if (!ack) { err.textContent = '请先勾选信息展示告知确认'; return; }
 
-    const config = {};
-    Admin.$$('#st-dyn-fields [data-dyn]').forEach(i => { config[i.dataset.dyn] = i.value.trim(); });
+    const config = readDynConfig();
+    const missing = (currentType.fields || []).find(f => f.required && !config[f.key]);
+    if (missing) { err.textContent = '请填写必填项：' + missing.label; return; }
 
+    const body = { name, type: currentType.type, region, capacityBytes: capBytes, readOnly, config, acknowledgeDisclosure: true };
     try {
-      await Admin.post('/api/admin/storage', {
-        name, type: currentType.type, region, capacityBytes: capBytes,
-        readOnly, config, acknowledgeDisclosure: true
-      });
-      R6T5.toast('存储策略已创建', 'ok');
+      if (editingStrategy) await Admin.patch('/api/admin/storage/' + encodeURIComponent(editingStrategy.id), body);
+      else await Admin.post('/api/admin/storage', body);
+      R6T5.toast(editingStrategy ? '存储策略已更新' : '存储策略已创建', 'ok');
       R6T5.modal.close('#m-add');
       Admin.$('#strategy-form').reset();
       await loadStorageList();
     } catch (e) {
-      err.textContent = (e && e.message) || '创建失败';
+      err.textContent = (e && e.message) || '保存失败';
       Admin.toastErr(e);
     }
+  }
+
+  /* ---------- 目录绑定 ---------- */
+  let editingBinding = null;
+
+  async function loadBindings() {
+    const tbody = Admin.$('#binding-rows');
+    let d;
+    try { d = await Admin.get('/api/admin/bindings'); }
+    catch (e) { Admin.toastErr(e); tbody.innerHTML = ''; return; }
+    const items = (d && d.items) || [];
+    if (!items.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4"><div class="empty"><div class="ico">▢</div><h3>还没有目录绑定</h3><p>把某个目录映射到指定策略；未命中绑定的目录走用户组默认或本地默认。</p></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(b => {
+      const dirLabel = b.scope === 'user'
+        ? R6T5.esc(b.email || '—') + ' · ' + R6T5.esc(b.subPath || '用户根')
+        : '所有用户 · ' + R6T5.esc(b.subPath || '用户根');
+      return '<tr data-id="' + R6T5.esc(b.id) + '">' +
+        '<td><div class="name">' + dirLabel + '</div></td>' +
+        '<td><div class="row tight"><span>' + R6T5.esc(b.strategyName || '—') + '</span>' +
+        '<span class="badge ' + (TYPE_BADGE[b.strategyType] || '') + '">' + R6T5.esc(typeText(b.strategyType)) + '</span>' +
+        (b.strategyReadOnly ? '<span class="badge warn">只读</span>' : '') + '</div></td>' +
+        '<td>' + Admin.time(b.createdAt) + '</td>' +
+        '<td><div class="row-actions"><button class="btn sm ghost" type="button" data-act="edit">编辑</button>' +
+        '<button class="btn sm danger" type="button" data-act="del">删除</button></div></td>' +
+        '</tr>';
+    }).join('');
+    tbody.querySelectorAll('[data-act="edit"]').forEach(btn =>
+      btn.addEventListener('click', () => openBindingModal(items.find(x => x.id === btn.closest('tr').dataset.id))));
+    tbody.querySelectorAll('[data-act="del"]').forEach(btn =>
+      btn.addEventListener('click', () => onBindingDelete(items.find(x => x.id === btn.closest('tr').dataset.id))));
+  }
+
+  function syncScopeField() {
+    const user = Admin.$('#bd-scope-user').checked;
+    Admin.$('#bd-email-field').classList.toggle('hide', !user);
+  }
+
+  function openBindingModal(b) {
+    editingBinding = b || null;
+    Admin.$('#m-bind-title').textContent = b ? '编辑目录绑定' : '新增目录绑定';
+    Admin.$('#bd-err').textContent = '';
+    const sel = Admin.$('#bd-strategy');
+    sel.innerHTML = strategies.map(s =>
+      '<option value="' + R6T5.esc(s.id) + '">' + R6T5.esc(s.name) + '（' + R6T5.esc(typeText(s.type)) + '）</option>').join('');
+    if (b) {
+      sel.value = b.strategyId;
+      Admin.$('#bd-scope-' + b.scope).checked = true;
+      Admin.$('#bd-email').value = b.email || '';
+      Admin.$('#bd-subpath').value = b.subPath || '';
+    } else {
+      Admin.$('#bd-scope-site').checked = true;
+      Admin.$('#bd-email').value = '';
+      Admin.$('#bd-subpath').value = '';
+    }
+    syncScopeField();
+    R6T5.modal.open('#m-bind');
+  }
+
+  async function onBindingSubmit(ev) {
+    ev.preventDefault();
+    const err = Admin.$('#bd-err');
+    const strategyId = Admin.$('#bd-strategy').value;
+    const scope = Admin.$('input[name="bd-scope"]:checked').value;
+    const email = Admin.$('#bd-email').value.trim();
+    const subPath = Admin.$('#bd-subpath').value.trim();
+    if (!strategyId) { err.textContent = '请选择策略'; return; }
+    if (scope === 'user' && !email) { err.textContent = '指定用户时请填写邮箱'; return; }
+    const body = { strategyId, scope, subPath };
+    if (scope === 'user') body.email = email;
+    try {
+      if (editingBinding) await Admin.patch('/api/admin/bindings/' + encodeURIComponent(editingBinding.id), body);
+      else await Admin.post('/api/admin/bindings', body);
+      R6T5.toast('绑定已保存', 'ok');
+      R6T5.modal.close('#m-bind');
+      await loadBindings();
+    } catch (e) {
+      // 409 冲突等：后端 message 原样展示在弹窗内
+      err.textContent = (e && e.message) || '保存失败';
+      Admin.toastErr(e);
+    }
+  }
+
+  async function onBindingDelete(b) {
+    if (!b) return;
+    const dirLabel = b.scope === 'user' ? (b.email || '—') : '所有用户';
+    if (!confirm('确定删除绑定「' + dirLabel + ' · ' + (b.subPath || '用户根') + '」？')) return;
+    try {
+      await Admin.del('/api/admin/bindings/' + encodeURIComponent(b.id));
+      R6T5.toast('绑定已删除', 'ok');
+      await loadBindings();
+    } catch (e) { Admin.toastErr(e); }
+  }
+
+  /* ---------- 解析预览 ---------- */
+  async function prefillResolvePath() {
+    const input = Admin.$('#rs-path');
+    if (!input) return;
+    try { const me = await R6T5.get('/api/me'); if (me && me.user) input.value = me.user.email; }
+    catch (_) { /* 留空，由管理员手填 */ }
+  }
+
+  async function doResolve() {
+    const path = Admin.$('#rs-path').value.trim();
+    const box = Admin.$('#rs-result');
+    if (!path) {
+      box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>请输入要解析的目录路径。</div></div>';
+      return;
+    }
+    let r;
+    try { r = await Admin.get('/api/admin/bindings/resolve', { path }); }
+    catch (e) { Admin.toastErr(e); box.innerHTML = ''; return; }
+    const s = r.strategy || {};
+    const matchedBy = MATCH_LABEL[r.matchedBy] || r.matchedBy || '—';
+    box.innerHTML =
+      '<div class="note info"><span class="ico">i</span><div class="flex1">' +
+      '<div class="row tight"><b>' + R6T5.esc(s.name || '—') + '</b>' +
+      '<span class="badge ' + (TYPE_BADGE[s.type] || '') + '">' + R6T5.esc(typeText(s.type)) + '</span>' +
+      (s.readOnly ? '<span class="badge warn">只读</span>' : '<span class="badge ok">可写</span>') + '</div>' +
+      '<div class="faint small mt1">命中方式：' + R6T5.esc(matchedBy) +
+      (r.bindingId ? ' · 绑定 ' + R6T5.esc(r.bindingId) : '') +
+      (r.subPath ? ' · 子目录 ' + R6T5.esc(r.subPath) : '') + '</div>' +
+      '</div></div>';
   }
 
   /* ---------- 用户组 groups ---------- */

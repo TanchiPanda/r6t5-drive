@@ -97,7 +97,7 @@ npm start          # 等价于 node server/index.js
 | 步骤 | 状态项 | 要做的事 |
 |---|---|---|
 | 1 | `supabase` | 管理员凭管理密码进入后台，配置 Supabase URL / anon key / service key 并通过自检 |
-| 2 | `storage` | 添加一条可用的存储策略（P1 仅本地数据卷读写） |
+| 2 | `storage` | 添加一条可用的存储策略（本地卷 / S3 兼容 / GitHub 只读） |
 | 3 | `groups` | 创建除默认组外至少 1 个用户组（共满 2 个可用组），配置空间 / 单文件 / 7 天流量上限 |
 | 4 | `site` | 补全站点名、对外地址、默认用户组 |
 | 5 | `ready` | 全部通过，普通用户即可用邮箱登录 |
@@ -118,8 +118,10 @@ npm start          # 等价于 node server/index.js
 | 类型 | 能力 | 状态 | 说明 |
 |---|---|---|---|
 | 本地数据卷 `volume` | 读写 | P1 已实现 | 直接读写容器挂载的数据目录 |
-| S3 兼容 `s3` | 读写 | P2 预留 | 适配器预留：七牛 / 阿里云 OSS / 腾讯云 COS / 华为云 OBS / 金山 KS3 / 又拍 / OneDrive 等 |
-| GitHub 仓库 `github` | 只读 | P2 预留 | 以只读方式引用仓库文件 |
+| S3 兼容 `s3` | 读写 | P2 已实现 | 自研 SigV4（不引 SDK），流式上传下载；支持自定义 endpoint / region / bucket / pathStyle / prefix，兼容 MinIO、R2、OSS、COS、OBS 等 |
+| GitHub 仓库 `github` | 只读 | P2 已实现 | Contents API 列目录 + raw 流式下载；写操作一律 `403 strategy_readonly` |
+
+**目录绑定**（P2）：管理员可把某个目录（站点级或指定用户）绑定到任一策略，解析顺序为「最深匹配的绑定 → 用户组默认策略 → 站点默认策略 → 本地卷」。文件页会显示当前目录落在哪个策略上；只读策略下上传、改名、移动、删除都会被拦成 `403 strategy_readonly`。
 
 **创建前披露**：添加策略前，后台会明确告知哪些字段会展示给普通用户——策略名、存储类型、位置/区域、容量、是否只读；密钥、端点、凭证等字段只保存在服务端，任何接口都不下发明文。创建时需勾选披露确认，否则后端返回 `not_acknowledged`。
 
@@ -131,16 +133,18 @@ npm start          # 等价于 node server/index.js
 |---|---|---|
 | 身份鉴权 | `POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/me` | Supabase 校验后写 httpOnly 会话 Cookie；`DEV_AUTH=1` 时方可使用 dev 登录 |
 | 初始化状态 | `GET /api/setup/status` | 登录页唯一引导来源，返回当前最高优先级待办 |
-| 管理端 | `/api/admin/supabase`、`/api/admin/overview`、`/api/admin/groups`、`/api/admin/storage`、`/api/admin/users`、`/api/admin/settings`、`/api/admin/audit`、`/api/admin/trash` | 管理员会话守卫；密钥类配置永不回明文 |
+| 管理端 | `/api/admin/supabase`、`/api/admin/overview`、`/api/admin/groups`、`/api/admin/storage`、`/api/admin/bindings`、`/api/admin/users`、`/api/admin/settings`、`/api/admin/audit`、`/api/admin/trash` | 管理员会话守卫；密钥类配置永不回明文 |
 | 用户端文件 | `GET /api/files`、`POST /api/files/folder`、`POST /api/files/upload`、`GET /api/files/download`、重命名 / 移动 / 删除 / 搜索 | 先校验后落盘；配额拦截顺序：单文件上限 → 空间剩余 → 7 天上传流量 |
 | 回收站 | `GET /api/trash`、`POST /api/trash/restore`、`DELETE /api/trash` | 软删保留 `TRASH_RETENTION_DAYS`（默认 30）天 |
-| 分享 | `GET /api/shares`、`POST /api/shares`、`GET /api/share/:token` | P1 仅占位，创建与访问返回 `not_implemented` |
+| 分享 | `GET /api/shares`、`POST /api/shares`、`GET /api/share/:token` | 见 `docs/api-contract.md` 的 P3 段 |
 
 ## 版本进度
 
 - **P0（已完成）**：仓库骨架、介绍页、文档与接口契约冻结。
 - **P1（本轮）**：后端骨架与启动流程、登录引导状态机、管理端概览、上传 / 列表 / 下载 / 删除、配额与流量拦截、回收站软删与恢复、本地卷存储策略。
-- **P2（规划）**：S3 与 GitHub 存储适配器、完整分享（有效期 / 提取码 / 下载次数 / 文件夹分享）、文件预览、WebDAV、离线下载侧车对接、ONLYOFFICE 在线编辑、PWA 与 i18n。
+- **P2（已完成）**：S3 / GitHub 存储适配器、目录绑定与解析、管理端「文件系统」页（类型化表单 + 测试连接 + 健康状态）、密钥脱敏。
+- **P3（进行中）**：分享（有效期 / 提取码 / 下载次数 / 目录分享）与在线预览（图片 / 视频 Range / 文本 / Markdown / PDF）。
+- **P4/P5（规划）**：分片上传与断点续传、打包下载与在线压缩解压、WebDAV、PWA 与 i18n、媒体元数据、离线下载（aria2 可选）、Office 在线编辑（OnlyOffice 可选）。
 
 ## 验证
 

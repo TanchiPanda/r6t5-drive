@@ -390,3 +390,105 @@ server/services/storage/{registry,volume}.js
 
 SQLite 表：`settings` `groups` `users` `nodes` `traffic` `shares` `audit` `storage_strategies`。
 数据目录：`DB_PATH`（默认 `data/r6t5.db`）、`STORAGE_ROOT`（默认 `data/volume`）。
+
+---
+
+# P2 追加：多存储后端（本段优先于上文冲突项）
+
+## P2-0 新增错误码
+
+| code | HTTP | 含义 |
+|---|---|---|
+| `strategy_readonly` | 403 | 目标策略只读（GitHub），写操作被拒；`details.strategyId/strategyType` |
+| `upstream_error` | 502 | S3 / GitHub 上游失败；`details.provider/op/status` |
+| `storage_unsupported` | 400 | 该策略不支持此操作（如只读上的 rename/move） |
+
+## P2-1 存储类型注册表 `GET /api/admin/storage/types`
+
+三种类型均为 `status:"ready"`。`fields[]` 每项：`{key,label,type:'text'|'password'|'select'|'number',required,secret,placeholder?,help?,default?,options?[]}`。
+
+**volume**（不变）：`rootPath`
+
+**s3**
+```json
+{ "type":"s3","label":"S3 兼容对象存储","status":"ready",
+  "capabilities":{"read":true,"write":true,"list":true},
+  "publicFields":[策略名/存储类型/位置-区域/容量/是否只读],
+  "neverPublic":[{"key":"config.endpoint","label":"服务端点"},{"key":"config.accessKeyId","label":"Access Key ID"},{"key":"config.secretAccessKey","label":"Secret Access Key"}],
+  "fields":[
+    {"key":"endpoint","label":"Endpoint","type":"text","required":true,"placeholder":"https://s3.us-east-1.amazonaws.com","help":"AWS S3 / R2 / MinIO / 七牛 / OSS / COS / OBS / KS3 等 S3 兼容服务"},
+    {"key":"region","label":"Region","type":"text","required":true,"default":"us-east-1"},
+    {"key":"bucket","label":"Bucket","type":"text","required":true},
+    {"key":"accessKeyId","label":"Access Key ID","type":"text","required":true,"secret":true},
+    {"key":"secretAccessKey","label":"Secret Access Key","type":"password","required":true,"secret":true},
+    {"key":"prefix","label":"对象前缀","type":"text","required":false,"placeholder":"r6t5-drive"},
+    {"key":"pathStyle","label":"访问形态","type":"select","required":false,"default":"auto",
+     "options":[{"value":"auto","label":"自动"},{"value":"on","label":"path-style"},{"value":"off","label":"virtual-host"}]}
+  ],
+  "notice":"创建后，普通用户只会看到策略名、类型、区域、容量与是否只读；Endpoint、Access Key、Secret Key 仅存服务端，永不下发。",
+  "docsHint":"使用 AWS SigV4 签名；上传为流式，不整文件读入内存。"}
+```
+
+**github**
+```json
+{ "type":"github","label":"GitHub 仓库（只读）","status":"ready",
+  "capabilities":{"read":true,"write":false,"list":true},
+  "neverPublic":[{"key":"config.token","label":"访问令牌"}],
+  "fields":[
+    {"key":"repo","label":"仓库","type":"text","required":true,"placeholder":"owner/repo"},
+    {"key":"branch","label":"分支","type":"text","required":false,"default":"main"},
+    {"key":"rootPath","label":"仓库内根目录","type":"text","required":false,"placeholder":"drive"},
+    {"key":"token","label":"访问令牌","type":"password","required":false,"secret":true,
+     "help":"公开仓库可留空；私有仓库需要 repo 读权限的 fine-grained token"}
+  ],
+  "notice":"创建后，普通用户只会看到策略名、类型、仓库名与只读标记；访问令牌仅存服务端。",
+  "docsHint":"列目录走 Contents API，下载走 raw；本策略所有写操作返回 403 strategy_readonly。"}
+```
+
+## P2-2 `GET /api/admin/storage` 列表项扩展
+
+```json
+{ "id":"s1","name":"…","type":"s3","region":"us-east-1 · my-bucket",
+  "capacityBytes":…, "usedBytes":…, "readOnly":false, "enabled":true, "fileCount":…,
+  "capabilities":{"read":true,"write":true,"list":true},
+  "configMasked":{ "endpoint":"https://…","bucket":"my-bucket","prefix":"r6t5-drive","accessKeyId":"****9fQZ" },
+  "health":{ "ok":true|false|null, "checkedAt":"…", "message":"…" },
+  "publicView":{ "name","type","region","capacityBytes","readOnly" } }
+```
+`configMasked` 规则：密钥/token 一律 `****` + **末四位**；端点、bucket、prefix、repo、branch、rootPath 明文可回（它们不是密钥）。
+
+## P2-3 创建 / 校验 / 自检
+
+- `POST /api/admin/storage`：`{name,type,region?,capacityBytes,readOnly?,config,acknowledgeDisclosure:true}`，三种类型都可创建；缺必填字段 → `400 invalid_input`（`details.field`）。s3 默认 `readOnly:false`；github 强制 `readOnly:true`。
+- `POST /api/admin/storage/validate`：`{type,config}` → **未保存先测**。S3 走 HeadBucket + ListObjectsV2(prefix, max-keys=1)，GitHub 走 `GET /repos/{owner}/{repo}` + `GET /branches/{branch}`。返回 `{ok,message,details}`，失败也 200。
+- `POST /api/admin/storage/:id/test`：同上，用已存配置；结果写入 `health`（settings 表 `health:<id>`）并返回 `{ok,writable,message,details}`。
+
+## P2-4 目录绑定 `/api/admin/bindings`
+
+```json
+// GET → { items:[{ id, strategyId, strategyName, strategyType, strategyReadOnly,
+//                  scope:'site'|'user', email:null|'a@x.com', subPath:'', createdAt }] }
+// POST { strategyId, scope, email?, subPath:'' } → 201 { item }
+// PATCH /:id { strategyId?, scope?, email?, subPath? } → { item }
+// DELETE /:id → { ok:true }
+// GET /api/admin/bindings/resolve?path=alice@x.com/media
+//   → { strategy:{id,name,type,readOnly,region}, matchedBy:'binding'|'group'|'local', bindingId?, depth?, subPath? }
+```
+`subPath` 相对**用户根**，`''` 表示用户根本身；`scope:'site'` 对所有用户生效，`scope:'user'` 只对 `email` 生效。
+
+## P2-5 用户端文件接口变化
+
+`GET /api/files` 响应新增：
+```json
+{ "strategy": { "id":"s1","name":"…","type":"s3","readOnly":false,"region":"…",
+                "matchedBy":"binding|group|local","bindingId":"b1","bindingPath":"media" },
+  "items": [ … , { "name":"a.txt","path":"…","type":"file","sizeBytes":…,"remote":true,"readOnly":true } ] }
+```
+- `remote:true` 表示该条目来自远端列举（S3 前缀 / GitHub Contents），不在本地 SQLite 元数据里。
+- 目录落在只读策略时，`strategy.readOnly=true`，前端应把上传/新建/重命名/移动/删除入口禁用并给出说明。
+
+写操作（`POST /api/files/upload`、`/folder`、`/rename`、`/move`、`DELETE /api/files`、`DELETE /api/trash`）在目标策略只读时返回 `403 strategy_readonly`。
+
+## P2-6 用户组默认策略
+
+`GET/POST/PATCH /api/admin/groups` 的 item 增加 `defaultStrategyId`（可为 `null`）。站点设置 `GET/PATCH /api/admin/settings` 增加 `defaultStorageId`（可为 `null`，解析顺序见 `docs/storage-drivers.md` §5）。

@@ -6,7 +6,8 @@ import {
   getNodeByPath, descendantsOf, restoreRecursive, deleteNodeRow,
 } from '../services/nodes.js';
 import * as registry from '../services/storage/registry.js';
-import * as volume from '../services/storage/volume.js';
+import { getDriver } from '../services/storage/driver.js';
+import { resolveStorage } from '../services/bindings.js';
 import { writeAudit } from '../services/audit.js';
 
 const router = Router();
@@ -59,11 +60,19 @@ router.delete('/', (req, res, next) => {
     const node = db.prepare('SELECT * FROM nodes WHERE path = ? AND deletedAt IS NOT NULL').get(logical);
     if (!node) throw notFound('回收站中不存在该节点');
     const descendants = descendantsOf(logical);
-    const strategy = registry.getStrategy(node.storageId) || registry.defaultStrategy();
+    const fallback = resolveStorage({ email, logicalPath: logical, user: req.user })?.strategy || registry.defaultStrategy();
     const tx = db.transaction(() => {
       for (const n of descendants) {
-        if (strategy) {
-          try { volume.removePhysical(strategy, n.path); } catch {}
+        const strategy = registry.getStrategy(n.storageId) || fallback;
+        if (strategy && !n.isDir) {
+          try {
+            const ret = getDriver(strategy.type).remove(strategy, n.path, { size: Number(n.sizeBytes), mime: n.mime });
+            if (ret && typeof ret.then === 'function') {
+              ret.catch((e) => console.warn('[storage] 永久删除远端对象失败：', e.message));
+            }
+          } catch (e) {
+            console.warn('[storage] 永久删除失败：', e.message);
+          }
         }
         deleteNodeRow(n.id);
       }

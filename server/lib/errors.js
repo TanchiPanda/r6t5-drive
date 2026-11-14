@@ -23,6 +23,24 @@ export const notImplemented = (message = '该能力在 P2 规划中') =>
 export const storageError = (message = '磁盘/适配器错误', details) =>
   new ApiError(500, 'storage_error', message, details);
 
+export const strategyReadonly = (message = '该目录绑定的是只读存储策略，不能写入', details) =>
+  new ApiError(403, 'strategy_readonly', message, details);
+export const upstreamError = (provider, message, details) =>
+  new ApiError(502, 'upstream_error', `${provider} 上游错误：${message}`, { provider, ...details });
+export const storageUnsupported = (message = '该存储策略不支持此操作', details) =>
+  new ApiError(400, 'storage_unsupported', message, details);
+
+
+// ---- P3 分享 / 预览 ----
+export const shareNotFound = () => new ApiError(404, 'share_not_found', '分享链接不存在或已被删除');
+export const shareExpired = (details) => new ApiError(410, 'share_expired', '分享链接已过期', details);
+export const shareRevoked = () => new ApiError(410, 'share_revoked', '分享链接已被撤销');
+export const shareExceeded = (details) => new ApiError(410, 'share_exceeded', '分享链接的下载次数已用完', details);
+export const shareCodeRequired = () => new ApiError(401, 'share_code_required', '该分享需要提取码');
+export const shareCodeInvalid = (details) => new ApiError(403, 'share_code_invalid', '提取码不正确', details);
+export const previewUnsupported = (details) => new ApiError(415, 'preview_unsupported', '该文件类型不支持在线预览', details);
+export const previewTooLarge = (details) => new ApiError(413, 'preview_too_large', '文件过大，不适合在线预览', details);
+
 export function errorBody(err) {
   const code = err.code || 'internal_error';
   const message = err.message || '内部错误';

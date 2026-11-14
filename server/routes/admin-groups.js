@@ -18,9 +18,17 @@ function serialize(g) {
     maxFileSizeBytes: Number(g.maxFileSizeBytes),
     traffic7dLimitBytes: Number(g.traffic7dLimitBytes),
     isDefault: !!g.isDefault,
+    defaultStrategyId: g.defaultStrategyId || null,
     userCount: userCount(g.id),
     createdAt: g.createdAt,
   };
+}
+
+function validateStrategyId(id) {
+  if (id == null || id === '') return null;
+  const s = db.prepare('SELECT id FROM storage_strategies WHERE id = ?').get(id);
+  if (!s) throw badRequest('invalid_input', '默认存储策略不存在', { field: 'defaultStrategyId' });
+  return id;
 }
 
 function validateLimits(body) {
@@ -47,14 +55,15 @@ router.post('/', (req, res, next) => {
     const dup = db.prepare('SELECT id FROM groups WHERE name = ?').get(name.trim());
     if (dup) throw conflict('组名已存在', { field: 'name' });
     const limits = validateLimits(req.body || {});
+    const defaultStrategyId = validateStrategyId((req.body || {}).defaultStrategyId);
     const id = genId('g');
     const ts = nowIso();
     const tx = db.transaction(() => {
       if (isDefault) db.prepare('UPDATE groups SET isDefault = 0').run();
       db.prepare(
-        `INSERT INTO groups (id, name, spaceLimitBytes, maxFileSizeBytes, traffic7dLimitBytes, isDefault, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(id, name.trim(), limits.spaceLimitBytes, limits.maxFileSizeBytes, limits.traffic7dLimitBytes, isDefault ? 1 : 0, ts);
+        `INSERT INTO groups (id, name, spaceLimitBytes, maxFileSizeBytes, traffic7dLimitBytes, isDefault, defaultStrategyId, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(id, name.trim(), limits.spaceLimitBytes, limits.maxFileSizeBytes, limits.traffic7dLimitBytes, isDefault ? 1 : 0, defaultStrategyId, ts);
     });
     tx();
     const item = serialize(db.prepare('SELECT * FROM groups WHERE id = ?').get(id));
@@ -77,13 +86,17 @@ router.patch('/:id', (req, res, next) => {
     if (name.length < 1 || name.length > 32) throw badRequest('invalid_input', '组名长度需为 1–32 字', { field: 'name' });
     const dup = db.prepare('SELECT id FROM groups WHERE name = ? AND id != ?').get(name, g.id);
     if (dup) throw conflict('组名已存在', { field: 'name' });
+    let defaultStrategyId = g.defaultStrategyId || null;
+    if (body.defaultStrategyId !== undefined) {
+      defaultStrategyId = validateStrategyId(body.defaultStrategyId);
+    }
     const tx = db.transaction(() => {
       if (body.isDefault === true) db.prepare('UPDATE groups SET isDefault = 0').run();
       db.prepare(
-        `UPDATE groups SET name = ?, spaceLimitBytes = ?, maxFileSizeBytes = ?, traffic7dLimitBytes = ?, isDefault = ?
+        `UPDATE groups SET name = ?, spaceLimitBytes = ?, maxFileSizeBytes = ?, traffic7dLimitBytes = ?, isDefault = ?, defaultStrategyId = ?
          WHERE id = ?`
       ).run(name, limits.spaceLimitBytes, limits.maxFileSizeBytes, limits.traffic7dLimitBytes,
-        body.isDefault === true ? 1 : g.isDefault, g.id);
+        body.isDefault === true ? 1 : g.isDefault, defaultStrategyId, g.id);
     });
     tx();
     res.json({ item: serialize(db.prepare('SELECT * FROM groups WHERE id = ?').get(g.id)) });
