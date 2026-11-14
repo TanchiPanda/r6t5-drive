@@ -32,6 +32,7 @@
 | `rate_limited` | 429 | 登录尝试过多 |
 | `supabase_not_configured` | 412 | 尚未配置 Supabase |
 | `supabase_unreachable` | 400 | URL/key 校验失败（details.reason） |
+| `storage_not_configured` | 412 | 站点还没有可用的存储策略（初始化未完成时写入类操作会命中） |
 | `storage_error` | 500 | 磁盘/适配器错误 |
 | `not_implemented` | 501 | P2 能力占位（share 创建等） |
 | `internal_error` | 500 | 兜底 |

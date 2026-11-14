@@ -9,7 +9,7 @@ import {
   normalizeLogicalPath, validateName, joinLogical, parentOf, basenameOf,
 } from '../lib/paths.js';
 import {
-  badRequest, forbidden, notFound, conflict, quotaFile, quotaSpace, quotaTraffic, storageError,
+  badRequest, forbidden, notFound, conflict, quotaFile, quotaSpace, quotaTraffic, storageError, ApiError,
 } from '../lib/errors.js';
 import {
   getNodeByPath, insertNode, listChildren, childrenCount, descendantsOf,
@@ -73,7 +73,7 @@ function crumbsOf(logicalPath) {
 
 function requireStrategy() {
   const s = registry.defaultStrategy();
-  if (!s) throw storageError('尚无可用的存储策略，请管理员先添加');
+  if (!s) throw new ApiError(412, 'storage_not_configured', '站点还没有可用的存储策略，请联系管理员在后台添加一条');
   return s;
 }
 
