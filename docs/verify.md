@@ -1,4 +1,4 @@
-# 验收记录（P0/P1/P2）
+# 验收记录（P0/P1/P2/P3）
 
 > 本文只记“实测到什么”，不写愿景。所有命令可在仓库根直接复现。
 
@@ -130,3 +130,69 @@ GITHUB_TOKEN=<pat> node tools/test-github.mjs             # 4/4
 - 驱动分发：`server/services/storage/driver.js`（`getDriver(type)` / `driverCaps(type)` / `isWritable(type)`）。
 - 只读拦截：`server/routes/files.js` 的 `assertWritable()`，在上传、建目录、重命名、移动、软删前统一调用。
 - S3 SigV4：`server/services/storage/s3.js`（SignedHeaders 固定 `host;x-amz-content-sha256;x-amz-date`，`UNSIGNED-PAYLOAD`，`auto/on` 走 path-style）。
+
+## 7. P3「分享与预览」验收
+
+### 7.1 逐项结果（实测）
+
+| # | 验收项 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 分享可设有效期（永久 / 1d / 7d / 30d / 自定义时间） | 通过 | `tools/test-p3-shares.mjs`：`expiresIn=30d` 实测 30.00 天后过期；自定义过去 ISO → `status=expired`；`permanent` → `expiresAt=null` |
+| 2 | 提取码可空 / 必填校验 / 明文不落库 | 通过 | 带码分享 `hasCode=true`，错码 403 `share_code_invalid`；`GET /api/shares`、meta、管理端列表全文 grep 不到提取码明文 |
+| 3 | 下载次数上限 | 通过 | 额度=2 时第一次/第二次 200，第三次 410 `share_exceeded`；`downloadCount` 递增正确 |
+| 4 | 文件与目录都能分享，目录按只读浏览 | 通过 | 目录分享 201 `isDir=true`；`GET /api/share/:token/list` 列出子项；越界路径 403 `forbidden` |
+| 5 | 无效 / 过期 / 超次 / 撤销返回对应错误码 | 通过 | 404 `share_not_found`、410 `share_expired`、410 `share_exceeded`、410 `share_revoked`（用户撤销与管理端撤销都实测） |
+| 6 | 管理端可列出与撤销分享 | 通过 | `GET /api/admin/shares` 可见；`DELETE /api/admin/shares/:id` 后公开访问立即 410；审计落 `share_create`/`share_revoke` |
+| 7 | 图片预览 | 通过 | `GET /api/files/preview` → 200 `image/png`；`exif=1` 时 JPEG 回传 `X-Image-Orientation: 6` |
+| 8 | 视频 Range 拖动（206） | 通过（本地卷） | `Range: bytes=0-99` → 206 + `Content-Range: bytes 0-99/5242880`；越界 → 416 `bytes */5242880`；无 Range → 200 全量 |
+| 9 | 文本/代码预览限大小、服务端返回原文 | 通过 | `note.txt` → JSON `kind=text`；1,048,592 字节文本 → 413 `preview_too_large`（上限 1 MB） |
+| 10 | Markdown 渲染防 XSS | 通过 | 恶意输入含 `<script>`、`onerror=`、`javascript:`、`<iframe>`、`<object>` → 输出命中数全为 0；浏览器侧断言 `window.__xss` 未写入、`.md-body` 内无 `<script>`/`onerror` |
+| 11 | PDF 浏览器内嵌 | 通过 | 200 + `application/pdf` + `Content-Disposition: inline` |
+| 12 | 不支持的类型不返回 200 空壳 | 通过 | SVG → 415 `preview_unsupported`（理由：内联 SVG 可执行脚本）；未知后缀 → 415 |
+| 13 | 未授权 / 未解锁访问被拦 | 通过 | 分享未解锁下载 401 `share_code_required`；登录预览无策略 412 `storage_not_configured` |
+| 14 | P1/P2 不回归 | 通过 | `node tools/smoke-test.mjs` 52/52 |
+
+### 7.2 未验证 / 沙箱限制（如实说明）
+
+| 项 | 原因 | 上线前怎么补 |
+|---|---|---|
+| 真实视频解码播放 / 浏览器实际发起的 Range 请求 | 前端种子 mp4 是 28 字节占位桩，`<video>` 已挂载但未真解码 | 上传一个真实 mp4，用 Chrome 拖动进度条并看 206 响应 |
+| PDF 页面内实际渲染 | 种子 PDF 为最小桩文件 | 上传真实 PDF，检查 iframe 渲染与打印 |
+| EXIF 方向 2–8 的前端旋转效果 | 只造了 Orientation=6 的样本，前端 `rotate()` 映射未逐值核对 | 用 8 张不同 orientation 的照片逐一看 |
+| 提取码连错 5 次锁定 15 分钟 | 服务层逻辑与单测覆盖；未等真实 15 分钟窗口 | 手动连错 6 次观察 403 与解禁 |
+| 远端策略（S3/GitHub）上的视频 Range | 本机只有 volume 与 fake-s3（fake-s3 不回 206） | 接真实 S3/MinIO 后拖进度条验证 |
+| GitHub 远端 >100MB 预览的临时落盘分支 | 无在线大文件样本 | 用大文件仓库验证 415 文案 |
+| 浅色主题逐页核对 | 截图在默认深色主题完成，样式全部走既有令牌 | 切浅色主题再看 9 张页面 |
+| Docker 内运行 | 沙箱无 docker | 同 P1 说明 |
+
+### 7.3 已执行的自检命令
+
+```bash
+cd /home/user/Doubao/chats/38453631157677314/r6t5-drive
+PORT=8090 DEV_AUTH=1 ADMIN_PASSWORD=test123 node server/index.js &
+BASE=http://127.0.0.1:8090 node tools/smoke-test.mjs            # 52/52
+BASE=http://127.0.0.1:8090 node tools/test-p3-shares.mjs        # 50/50（HTTP + service 两层）
+PREVIEW_BASE=http://127.0.0.1:8090 node tools/test-p3-preview.mjs # 14/14（脚本自建 fixture）
+```
+
+### 7.4 截图（`docs/screenshots/p3/`）
+
+| 文件 | 说明 |
+|---|---|
+| `share-locked.png` | 带提取码的分享锁定态 |
+| `share-file.png` | 单文件分享（下载 + 预览） |
+| `share-dir.png` | 目录分享（面包屑 + 列表） |
+| `share-expired.png` | 过期分享的中文错误页 |
+| `files-share-dialog.png` | 文件页创建分享弹窗（有效期/提取码/次数/允许预览） |
+| `files-preview-image.png` | 图片预览弹层 |
+| `files-preview-markdown.png` | Markdown 预览（净化后渲染） |
+| `files-my-shares.png` | 「我的分享」抽屉 |
+| `admin-shares.png` | 管理端分享列表与筛选 |
+
+### 7.5 实现位置
+
+- 分享业务与提取码派生：`server/services/shares.js`（PBKDF2-sha512、10 万次、salt 16B；连错限流 `FAIL_MAX=5`/`FAIL_WINDOW_MS=15min`）。
+- 分享路由：`server/routes/shares.js`（`userRouter` 与 `publicRouter` 分离），管理端 `server/routes/admin-shares.js`；挂载见 `server/app.js`（`/api/shares` 套 `requireUser`，`/api/share` 免登录）。
+- 预览统一入口：`server/services/preview.js` 的 `sendPreview({req,res,strategy,logicalPath,node})`；类型分类 `classify()`；JPEG EXIF `jpegOrientation()`。
+- Markdown 净化：`server/lib/markdown.js`（先整段转义 → 白名单语法 → 链接协议白名单 → 输出后 `assertSafeHtml()` 复检）。
+- Range：volume 用 `fs.createReadStream({start,end})`；S3 用 `Range` 请求头（`caps.range=true`）；GitHub `caps.range=false`，≤100MB 落临时文件按范围读，>100MB 返回 415。

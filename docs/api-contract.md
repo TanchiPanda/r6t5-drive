@@ -492,3 +492,114 @@ SQLite 表：`settings` `groups` `users` `nodes` `traffic` `shares` `audit` `sto
 ## P2-6 用户组默认策略
 
 `GET/POST/PATCH /api/admin/groups` 的 item 增加 `defaultStrategyId`（可为 `null`）。站点设置 `GET/PATCH /api/admin/settings` 增加 `defaultStorageId`（可为 `null`，解析顺序见 `docs/storage-drivers.md` §5）。
+
+---
+
+# P3 追加：分享与预览（本段优先于上文冲突项）
+
+P3 实现时 P1 的 `shares` 占位表结构不同，`db.migrate()` 会在检测到旧结构（缺 `email` 列）时 `DROP TABLE shares` 重建——P1 阶段分享接口一律 501，未写入过数据，因此重建不损失业务数据。
+
+## P3-0 新增错误码
+
+| HTTP | code | 场景 |
+|---|---|---|
+| 404 | `share_not_found` | token 不存在 / 分享已删除 / 查看他人分享 |
+| 410 | `share_expired` | 分享已过有效期 |
+| 410 | `share_revoked` | 分享已被创建者或管理员撤销 |
+| 410 | `share_exceeded` | 下载次数已达上限 |
+| 401 | `share_code_required` | 需要提取码但当前请求未解锁（仅 list/download/preview） |
+| 403 | `share_code_invalid` | 提取码错误（同一 IP+token 连错 5 次后锁定 15 分钟） |
+| 415 | `preview_unsupported` | 类型不支持在线预览（含 SVG，故意不支持） |
+| 413 | `preview_too_large` | 超出预览大小上限 |
+
+## P3-1 用户端分享（`/api/shares`，需登录）
+
+### POST `/api/shares`
+body：`{ path, expiresIn, code, maxDownloads, allowPreview }`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `path` | string | 逻辑路径，必须是本人节点，不能是用户根 |
+| `expiresIn` | string | `permanent`（默认）/`1d`/`7d`/`30d`/ISO8601 时间 |
+| `code` | string? | 提取码 4–16 位字母数字；空表示无码 |
+| `maxDownloads` | number? | 1–100000；空表示不限 |
+| `allowPreview` | bool | 默认 true |
+
+201 `{ item }`，item 字段：`id, token, url('/s/<token>'), name, path, isDir, expiresAt, maxDownloads, downloadCount, allowPreview, hasCode, createdAt, status, revokedAt`
+
+- `status`: `active|expired|revoked|exhausted`（服务端计算）
+- 提取码只存 PBKDF2(sha512, 10 万次) 派生值与 salt，明文不落库、不回显、不进日志
+- 同路径未撤销分享上限 20 条，超出 `409 conflict`
+
+### GET `/api/shares` → `{ items: [...] }`（本人，createdAt 倒序）
+### GET `/api/shares/:id` → `{ item }`（不存在或他人 → `404 share_not_found`）
+### DELETE `/api/shares/:id` → `{ ok: true }`（写 `revokedAt`，幂等）
+
+## P3-2 公开访问（`/api/share`，免登录）
+
+### GET `/api/share/:token`
+→ `{ share: { name, isDir, allowPreview, hasCode, expiresAt, maxDownloads, downloadCount, remaining, status }, locked }`
+- `remaining` 为 `null` 表示不限；`locked=true` 表示有提取码且当前未解锁（**此处不报错**）
+
+### POST `/api/share/:token/unlock`
+body `{ code }` → `{ ok: true, unlocked: true }`，并下发 httpOnly Cookie `r6t5_share_<token前8位>`（`SameSite=Lax`、`Path=/`，值为签名 payload `{token}`）
+- 错码 `403 share_code_invalid`
+
+### GET `/api/share/:token/list?path=`
+→ `{ path, crumbs, items: [{ name, path, type, sizeBytes, mime, updatedAt }] }`
+- 仅目录分享可列；单文件分享 → `400 invalid_input`
+- 路径必须落在分享目录内，越界 `403 forbidden`
+- 条目 = 本地节点 ∪ 远端策略列举（失败降级为空，不影响列表）
+
+### GET `/api/share/:token/download?path=`
+- 目录分享必须带 `path`；单文件分享忽略该参数
+- 未解锁 `401 share_code_required`；过期/撤销/超次 → 410 三码
+- 成功后 `downloadCount += 1`、写 `share_hits`、给**分享创建者**记下载流量
+- 响应 `Content-Disposition: attachment; filename*=UTF-8''...`
+
+### GET `/api/share/:token/preview?path=`
+- `allowPreview=false` → `403 forbidden`
+- 其余行为与「P3-3 预览」一致（同一实现）
+
+## P3-3 登录用户预览（`/api/files/preview`，需登录）
+
+### GET `/api/files/preview?path=<逻辑路径>&exif=0|1`
+按类型返回：
+
+| 类型 | 扩展名 | 响应 |
+|---|---|---|
+| 图片 | png/jpg/jpeg/gif/webp/bmp/avif | 二进制 inline，`Content-Type` 对应；`exif=1` 时附 `X-Image-Orientation: 1..8`（前端 CSS 旋转，服务端不重编码） |
+| 视频 | mp4/webm/m4v/mov | 支持 `Range`：`206 + Content-Range + Accept-Ranges: bytes`；越界 `416`；无 Range 全量 200 |
+| PDF | pdf | `application/pdf` inline |
+| 文本/代码 | txt/md/log/json/yml/yaml/js/ts/jsx/tsx/py/go/java/c/cpp/h/sh/css/html/csv/xml/ini/conf/sql/rb/php/rs/toml | JSON `{ kind:'text', language, content, sizeBytes, truncated }`（上限 1 MB，超出 `413 preview_too_large`） |
+| Markdown | md | JSON `{ kind:'markdown', html, sizeBytes }`，`html` 由服务端渲染并净化 |
+| SVG | svg | `415 preview_unsupported`（内联 SVG 可执行脚本，故意不预览） |
+| 其它 | — | `415 preview_unsupported` |
+
+- 图片/PDF/视频上限 200 MB；文本/Markdown 1 MB
+- 需要存储策略：解析不到 → `412 storage_not_configured`；文件与远端都没有 → `404 not_found`
+- **Markdown 防 XSS**：先整体 HTML 转义，再只识别白名单语法（标题/粗体/斜体/行内代码/围栏代码/列表/引用/链接/表格）；链接协议仅 `http|https|mailto`；输出后再过 `<script|<iframe|<object|javascript:|on*=` 断言，命中则报错
+
+### GET `/api/files/preview/meta?path=`
+→ `{ kind, name, sizeBytes, mime, language?, orientation?, strategy: { type, name }, previewable, reason? }`
+- 问询用途：不可预览时返回 `previewable:false` + 中文 `reason`（不抛 415）
+
+## P3-4 管理端分享（`/api/admin/shares`，需管理员会话）
+
+### GET `/api/admin/shares?status=&email=&limit=`
+→ `{ items: [...], total }`，item 字段：`id, token, email, name, path, isDir, expiresAt, maxDownloads, downloadCount, allowPreview, hasCode, status, createdAt, revokedAt`
+- `status` 过滤可选值同 P3-1；`limit` 默认 50、上限 200
+
+### DELETE `/api/admin/shares/:id` → `{ ok: true }`，写审计 `share_revoke`
+
+## P3-5 页面路由
+
+| 路由 | 页面 | 说明 |
+|---|---|---|
+| `/share/:token`、`/s/:token` | `public/share.html` | 公开分享页，token 由前端从路径解析 |
+| `/files` | `public/files.html` | 新增分享弹窗与预览弹层 |
+| `/admin/shares.html` | `public/admin/shares.html` | 管理端分享列表与撤销 |
+
+## P3-6 审计动作
+
+分享相关新增 `share_create`、`share_revoke`（`server/services/audit.js` 白名单已扩展）。

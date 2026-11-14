@@ -11,15 +11,26 @@
 </head>
 <body data-page="share">
 <div class="shell no-side">
-  <div class="share-wrap">
+  <div class="share-wrap" id="share-wrap">
     <div class="card share-card">
       <div class="login-logo"><span class="dot"></span><div>R6T5 Drive<small>分享链接</small></div></div>
-      <h1 class="login-title">文件分享</h1>
-      <p class="login-sub">通过链接访问他人分享的文件</p>
-      <div id="share-body"></div>
+      <div id="share-body" class="stack"></div>
     </div>
   </div>
 </div>
+
+<!-- 预览弹层（结构由 app.js 的预览组件复用渲染） -->
+<div class="modal-mask" id="m-share-preview">
+  <div class="modal modal-wide">
+    <div class="modal-head">
+      <h3 id="sp-title">预览</h3>
+      <div class="spacer"></div>
+      <button class="btn icon ghost" id="sp-close" type="button" title="关闭">✕</button>
+    </div>
+    <div class="modal-body" id="sp-body"></div>
+  </div>
+</div>
+
 <div class="toasts"></div>
 <script src="/assets/api.js"></script>
 <script src="/assets/app.js"></script>

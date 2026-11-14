@@ -21,7 +21,9 @@ import adminTrashRouter from './routes/admin-trash.js';
 import filesRouter from './routes/files.js';
 import trashRouter from './routes/trash.js';
 import accountRouter from './routes/account.js';
-import sharesRouter from './routes/shares.js';
+import sharesRouter, { publicRouter as sharePublicRouter } from './routes/shares.js';
+import adminSharesRouter from './routes/admin-shares.js';
+import previewRouter from './routes/preview.js';
 
 const app = express();
 
@@ -31,8 +33,9 @@ app.use(express.json({ limit: '2mb' }));
 app.use('/api/setup', setupRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/me', meRouter);
-app.use('/api/shares', sharesRouter);
-app.use('/api/share', sharesRouter);
+// 用户端分享（需登录）与公开访问（免登录）分开挂载
+app.use('/api/shares', requireUser, sharesRouter);
+app.use('/api/share', sharePublicRouter);
 
 // ---- 管理员认证（登录/登出/会话本身不套 admin 守卫）----
 app.use('/api/admin', adminAuthRouter);
@@ -50,9 +53,12 @@ adminApi.use('/users', adminUsersRouter);
 adminApi.use('/settings', adminSettingsRouter);
 adminApi.use('/audit', adminAuditRouter);
 adminApi.use('/trash', adminTrashRouter);
+adminApi.use('/shares', adminSharesRouter);
 app.use('/api/admin', adminApi);
 
 // ---- 用户端文件 / 回收站 / 账号 ----
+// 预览必须挂在 /api/files 之前，否则会被 filesRouter 的根路由吃掉
+app.use('/api/files/preview', requireUser, previewRouter);
 app.use('/api/files', requireUser, filesRouter);
 app.use('/api/trash', requireUser, trashRouter);
 app.use('/api/account', requireUser, accountRouter);
@@ -83,7 +89,7 @@ app.get('/account', userPageGuard, (req, res, next) => {
 });
 
 // 分享页：/share/:token 一律落到同一张骨架页，token 由前端从路径解析
-app.get(['/share', '/share/:token'], (req, res, next) => {
+app.get(['/share', '/share/:token', '/s', '/s/:token'], (req, res, next) => {
   res.sendFile(path.join(ENV.PUBLIC_DIR, 'share.html'), err => (err ? next() : undefined));
 });
 

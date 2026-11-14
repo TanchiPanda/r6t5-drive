@@ -118,3 +118,17 @@ td .row-actions{display:flex;gap:var(--s2);flex-wrap:wrap}
 /* ---------- P2 文件系统：徽标 / 操作按钮不折行 ---------- */
 .badge{white-space:nowrap}
 td .row-actions .btn{white-space:nowrap}
+
+/* ---------- 分享管理：筛选工具条 ---------- */
+.toolbar .searchbox{display:flex;align-items:center;gap:var(--s2);min-width:200px;max-width:320px;flex:1}
+.toolbar .searchbox .input{min-width:0}
+#share-state .table-wrap{overflow:auto}
+
+/* ---------- 窄屏（≤720px）：顶栏换行、工具条折行、表格横向滚动 ---------- */
+@media(max-width:720px){
+  .topbar{flex-wrap:wrap;height:auto;padding:var(--s2) var(--s4)}
+  .toolbar .row.tight{width:100%}
+  .toolbar .searchbox{min-width:0;max-width:100%;flex:1 1 100%}
+  .toolbar .select{max-width:100%;flex:1 1 160px}
+  #share-state .table-wrap{max-width:100%}
+}

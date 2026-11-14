@@ -46,6 +46,23 @@
         </div>
         <div class="stack">
           <div id="page-alert" class="page-alert hide"></div>
+          <div class="card flat toolbar">
+            <div class="row tight">
+              <select class="select" id="share-status" style="max-width:180px">
+                <option value="">全部状态</option>
+                <option value="active">有效</option>
+                <option value="expired">已过期</option>
+                <option value="revoked">已撤销</option>
+                <option value="exhausted">次数用尽</option>
+              </select>
+              <div class="searchbox">
+                <input class="input" id="share-email" type="search" placeholder="按分享者邮箱搜索…" autocomplete="off">
+              </div>
+              <button class="btn sm" id="share-search" type="button">查询</button>
+              <div class="spacer"></div>
+              <span class="faint small" id="share-count"></span>
+            </div>
+          </div>
           <div id="share-state"></div>
         </div>
       </div>

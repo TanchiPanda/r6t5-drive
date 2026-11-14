@@ -937,27 +937,88 @@
     }
   }
 
-  /* ---------- 分享 shares（P1 占位） ---------- */
+  /* ---------- 分享 shares（管理端列表 + 撤销） ---------- */
+  const ADMIN_SHARE_STATUS = {
+    active: { label: '有效', cls: 'ok' },
+    expired: { label: '已过期', cls: 'warn' },
+    revoked: { label: '已撤销', cls: 'danger' },
+    exhausted: { label: '次数用尽', cls: 'danger' }
+  };
+  const adminShareState = { status: '', email: '' };
+
   async function initShares() {
     Admin.bindLogout();
     await Admin.requireAdmin();
+
+    const sel = Admin.$('#share-status');
+    const email = Admin.$('#share-email');
+    Admin.$('#share-search').addEventListener('click', () => {
+      adminShareState.status = sel.value;
+      adminShareState.email = email.value.trim();
+      loadAdminShares();
+    });
+    sel.addEventListener('change', () => {
+      adminShareState.status = sel.value;
+      adminShareState.email = email.value.trim();
+      loadAdminShares();
+    });
+    email.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { adminShareState.email = email.value.trim(); loadAdminShares(); }
+    });
+
+    await loadAdminShares();
+  }
+
+  async function loadAdminShares() {
     const box = Admin.$('#share-state');
+    const alertBox = Admin.$('#page-alert');
+    Admin.clearAlert(alertBox);
     let d;
-    try { d = await Admin.get('/api/shares'); }
-    catch (e) { Admin.alert(Admin.$('#page-alert'), e, '分享状态读取失败'); return; }
-    const available = !!(d && d.available);
-    if (available) {
-      box.innerHTML = '<div class="note info"><span class="ico">i</span><div>分享功能已开启，共 ' + ((d.items || []).length) + ' 条分享。</div></div>';
-    } else {
-      box.innerHTML = '<div class="empty"><div class="ico">▤</div><h3>分享将在 P2 提供</h3>' +
-        '<p>当前版本未开放分享能力（接口返回 available:false）。P2 将支持：有效期、提取码、下载次数、文件夹分享。</p></div>' +
-        '<div class="placeholder-grid mt4">' +
-        '<div class="ph"><div class="k">有效期</div><div class="d">按天 / 永久设置分享链接过期时间</div></div>' +
-        '<div class="ph"><div class="k">提取码</div><div class="d">可选 4 位提取码保护链接</div></div>' +
-        '<div class="ph"><div class="k">下载次数</div><div class="d">限制单链接最大下载次数</div></div>' +
-        '<div class="ph"><div class="k">文件夹分享</div><div class="d">整目录打包对外分享</div></div>' +
-        '</div>';
+    try {
+      d = await Admin.get('/api/admin/shares', { status: adminShareState.status, email: adminShareState.email, limit: 200 });
+    } catch (e) { Admin.alert(alertBox, e, '分享列表读取失败'); box.innerHTML = ''; return; }
+    const items = (d && d.items) || [];
+    Admin.$('#share-count').textContent = '共 ' + ((d && d.total) != null ? d.total : items.length) + ' 条';
+
+    if (!items.length) {
+      box.innerHTML = '<div class="empty"><div class="ico">↗</div><h3>没有匹配的分享</h3>' +
+        '<p>调整状态或邮箱筛选后重试；当前还没有对外分享链接。</p></div>';
+      return;
     }
+
+    box.innerHTML = '<div class="table-wrap"><table class="table"><thead><tr>' +
+      '<th>分享者</th><th>对象</th><th>类型</th><th>状态</th><th>有效期</th>' +
+      '<th class="num">已下载 / 上限</th><th>提取码</th><th>创建时间</th><th></th>' +
+      '</tr></thead><tbody>' +
+      items.map(it => {
+        const st = ADMIN_SHARE_STATUS[it.status] || { label: it.status || '—', cls: '' };
+        const dl = it.maxDownloads == null ? it.downloadCount + ' / 不限' : it.downloadCount + ' / ' + it.maxDownloads;
+        return '<tr data-id="' + R6T5.esc(it.id) + '">' +
+          '<td>' + R6T5.esc(it.email || '—') + '</td>' +
+          '<td><div class="name"><span class="fname">' + R6T5.esc(it.name) + '</span></div>' +
+          '<div class="faint small mono-sm">' + R6T5.esc(it.path || '') + '</div></td>' +
+          '<td>' + (it.isDir ? '文件夹' : '文件') + '</td>' +
+          '<td><span class="badge ' + st.cls + '">' + st.label + '</span></td>' +
+          '<td>' + (it.expiresAt ? Admin.time(it.expiresAt) : '永久') + '</td>' +
+          '<td class="num">' + dl + '</td>' +
+          '<td>' + (it.hasCode ? '<span class="badge warn">有</span>' : '<span class="badge">无</span>') + '</td>' +
+          '<td>' + Admin.time(it.createdAt) + '</td>' +
+          '<td><div class="row-actions"><button class="btn sm danger" data-act="revoke" type="button">撤销</button></div></td>' +
+          '</tr>';
+      }).join('') + '</tbody></table></div>';
+
+    box.querySelectorAll('[data-act="revoke"]').forEach(btn =>
+      btn.addEventListener('click', () => onAdminRevoke(items.find(x => x.id === btn.closest('tr').dataset.id))));
+  }
+
+  async function onAdminRevoke(it) {
+    if (!it) return;
+    if (!confirm('确定撤销「' + it.name + '」的分享？撤销后链接立即失效，他人无法再访问。')) return;
+    try {
+      await Admin.del('/api/admin/shares/' + encodeURIComponent(it.id));
+      R6T5.toast('分享已撤销', 'ok');
+      await loadAdminShares();
+    } catch (e) { Admin.toastErr(e); }
   }
 
   /* ---------- 回收站 trash ---------- */
