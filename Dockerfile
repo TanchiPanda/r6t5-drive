@@ -3,7 +3,7 @@
 FROM node:22-bookworm-slim
 
 ENV NODE_ENV=production \
-    PORT=8080 \
+    PORT=5212 \
     TZ=Asia/Shanghai
 
 WORKDIR /app
@@ -32,10 +32,10 @@ USER node
 
 VOLUME /app/data
 
-EXPOSE 8080
+EXPOSE 5212
 
 # 健康检查：不额外安装 curl，直接用 Node 内置 fetch 探测初始化状态接口
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/api/setup/status').then(r=>{if(r.status!==200)process.exit(1);}).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5212)+'/api/setup/status').then(r=>{if(r.status!==200)process.exit(1);}).catch(()=>process.exit(1))"
 
 CMD ["node", "server/index.js"]

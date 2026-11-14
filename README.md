@@ -72,7 +72,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-启动后访问 `http://<主机>:8080`。容器数据落在 `./data` 目录，升级与备份见 [`docs/deploy.md`](docs/deploy.md)。
+启动后访问 `http://<主机>:5212`。容器数据落在 `./data` 目录，升级与备份见 [`docs/deploy.md`](docs/deploy.md)。
 
 ### 方式二：本机直接运行（不用 Docker）
 

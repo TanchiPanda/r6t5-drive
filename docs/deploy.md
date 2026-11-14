@@ -6,7 +6,7 @@
 
 - Docker Engine 与 Docker Compose 插件
 - 一个可访问的 Supabase 项目（用于账号体系；地址与密钥在后台填写，不写进 `.env`）
-- 端口规划：默认应用 `8080`；可选侧车端口见 `docker-compose.yml` 注释块
+- 端口规划：默认应用 `5212`；可选侧车端口见 `docker-compose.yml` 注释块
 
 ```bash
 cp .env.example .env
@@ -17,7 +17,7 @@ docker compose logs -f drive    # 首次启动若未设 ADMIN_PASSWORD，在此�
 
 ## 2. 反向代理
 
-应用默认监听容器内 `8080`。放在 Nginx / Caddy 后面时，**必须关闭请求体缓冲并放开上传大小限制**，否则大文件上传会被代理层截断或返回 413。
+应用默认监听容器内 `5212`。放在 Nginx / Caddy 后面时，**必须关闭请求体缓冲并放开上传大小限制**，否则大文件上传会被代理层截断或返回 413。
 
 ### Nginx
 
@@ -33,7 +33,7 @@ server {
     client_max_body_size 0;
 
     location / {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:5212;
         proxy_http_version 1.1;
 
         proxy_set_header Host              $host;
@@ -56,7 +56,7 @@ server {
 
 ```caddy
 drive.example.com {
-    reverse_proxy 127.0.0.1:8080 {
+    reverse_proxy 127.0.0.1:5212 {
         # 放开请求体大小并关闭缓冲
         header_up X-Forwarded-Proto {scheme}
         flush_interval -1
@@ -136,16 +136,16 @@ docker compose logs -f drive
 
 ```
 /srv/drive-site-a/
-├── docker-compose.yml     # ports: "8080:8080"
+├── docker-compose.yml     # ports: "5212:5212"
 ├── .env                   # 独立 SESSION_SECRET
 └── data/                  # 独立 data 卷
 /srv/drive-site-b/
-├── docker-compose.yml     # ports: "8090:8080"
+├── docker-compose.yml     # ports: "8090:5212"
 ├── .env
 └── data/
 ```
 
-- 端口冲突时只改宿主映射左侧端口（如 `"8090:8080"`），容器内端口保持 `8080`。
+- 端口冲突时只改宿主映射左侧端口（如 `"8090:5212"`），容器内端口保持 `5212`。
 - 各站点可对接不同 Supabase 项目或同一项目下的不同用户体系；存储策略各自独立配置。
 
 ## 8. 常见故障排查

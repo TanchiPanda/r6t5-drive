@@ -9,7 +9,7 @@ function resolveDataDir(p) {
 
 export const ENV = {
   ROOT,
-  PORT: Number(process.env.PORT || 8080),
+  PORT: Number(process.env.PORT || 5212),
   DB_PATH: resolveDataDir(process.env.DB_PATH || 'data/r6t5.db'),
   STORAGE_ROOT: resolveDataDir(process.env.STORAGE_ROOT || 'data/volume'),
   PUBLIC_DIR: path.join(ROOT, 'public'),

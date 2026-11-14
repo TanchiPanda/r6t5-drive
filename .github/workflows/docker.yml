@@ -40,15 +40,15 @@ jobs:
 
       - name: 冒烟启动（镜像能起、健康检查可访问）
         run: |
-          docker run -d --name smoke -p 8080:8080 \
+          docker run -d --name smoke -p 5212:5212 \
             -e SESSION_SECRET=$(openssl rand -hex 32) \
             -e ADMIN_PASSWORD=ci-smoke-pass \
             ${{ env.IMAGE }}:latest
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/api/setup/status >/dev/null; then
+            if curl -fsS http://127.0.0.1:5212/api/setup/status >/dev/null; then
               echo "setup/status ok"; break
             fi
             sleep 2
           done
-          curl -fsS http://127.0.0.1:8080/api/setup/status
+          curl -fsS http://127.0.0.1:5212/api/setup/status
           docker logs smoke | tail -20
