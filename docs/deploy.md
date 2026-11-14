@@ -15,6 +15,35 @@ docker compose up -d
 docker compose logs -f drive    # 首次启动若未设 ADMIN_PASSWORD，在此查看自动生成的管理密码
 ```
 
+### Windows（PowerShell / CMD）
+
+Windows 下没有 `$(...)` 命令替换，路径分隔符也不同，不要直接复制 Linux 那行。先把数据目录建出来，再按终端选一条：
+
+```powershell
+# PowerShell：1) 建数据目录 2) 启动
+New-Item -ItemType Directory -Force -Path .\data | Out-Null
+docker run -d --name r6t5-drive -p 5212:5212 `
+  -v "${PWD}\data:/app/data" `
+  -e "TZ=Asia/Shanghai" `
+  ghcr.io/tanchipanda/r6t5-drive:latest
+```
+
+```bat
+REM CMD
+mkdir data
+docker run -d --name r6t5-drive -p 5212:5212 -v "%cd%\data:/app/data" -e "TZ=Asia/Shanghai" ghcr.io/tanchipanda/r6t5-drive:latest
+```
+
+需要显式给会话密钥时（PowerShell，本机不一定有 openssl）：
+
+```powershell
+-e "SESSION_SECRET=$([guid]::NewGuid().ToString('N')+[guid]::NewGuid().ToString('N'))"
+```
+
+`SESSION_SECRET` 不传也可以：程序会生成随机密钥并落盘到 `data/`，重启继续沿用；删掉 `data` 则旧会话失效。
+
+查看首启日志拿管理员密码：`docker logs r6t5-drive`。
+
 ## 2. 反向代理
 
 应用默认监听容器内 `5212`。放在 Nginx / Caddy 后面时，**必须关闭请求体缓冲并放开上传大小限制**，否则大文件上传会被代理层截断或返回 413。

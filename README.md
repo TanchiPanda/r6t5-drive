@@ -72,7 +72,14 @@ cp .env.example .env
 docker compose up -d
 ```
 
-启动后访问 `http://<主机>:5212`。容器数据落在 `./data` 目录，升级与备份见 [`docs/deploy.md`](docs/deploy.md)。
+启动后访问 `http://<主机>:5212`。Windows 下用 PowerShell 而不是 `$(...)`：
+
+```powershell
+New-Item -ItemType Directory -Force -Path .\data | Out-Null
+docker run -d --name r6t5-drive -p 5212:5212 -v "${PWD}\data:/app/data" ghcr.io/tanchipanda/r6t5-drive:latest
+```
+
+容器数据落在 `./data` 目录，升级与备份见 [`docs/deploy.md`](docs/deploy.md)。
 
 ### 方式二：本机直接运行（不用 Docker）
 
