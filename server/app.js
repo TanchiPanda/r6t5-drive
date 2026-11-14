@@ -24,8 +24,19 @@ import accountRouter from './routes/account.js';
 import sharesRouter, { publicRouter as sharePublicRouter } from './routes/shares.js';
 import adminSharesRouter from './routes/admin-shares.js';
 import previewRouter from './routes/preview.js';
+import uploadsRouter from './routes/uploads.js';
+import archiveRouter from './routes/archive.js';
+import mediaRouter from './routes/media.js';
+import davRouter from './routes/dav.js';
+import appPasswordsRouter from './routes/apppasswords.js';
+import officeRouter, { officePublicRouter } from './routes/office.js';
+import downloadsRouter from './routes/downloads.js';
+import integrationsRouter from './routes/integrations.js';
 
 const app = express();
+
+// WebDAV 必须在 JSON 解析之前：PUT 请求体是原始二进制，不能被 express.json 吃掉
+app.use('/dav', davRouter);
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -59,8 +70,18 @@ app.use('/api/admin', adminApi);
 // ---- 用户端文件 / 回收站 / 账号 ----
 // 预览必须挂在 /api/files 之前，否则会被 filesRouter 的根路由吃掉
 app.use('/api/files/preview', requireUser, previewRouter);
+// Office 免登录 HMAC 回源/回调必须挂在登录守卫之前
+app.use('/api/files', officePublicRouter);
+app.use('/api/files', requireUser, officeRouter);
+app.use('/api/files/info', requireUser, mediaRouter);
+// 打包/压缩/解压：同样要挂在 filesRouter 之前，避免 /zip、/compress、/extract 落到根路由
+app.use('/api/files', requireUser, archiveRouter);
 app.use('/api/files', requireUser, filesRouter);
+app.use('/api/uploads', requireUser, uploadsRouter);
+app.use('/api/downloads', requireUser, downloadsRouter);
+app.use('/api/integrations', requireUser, integrationsRouter);
 app.use('/api/trash', requireUser, trashRouter);
+app.use('/api/account/app-passwords', requireUser, appPasswordsRouter);
 app.use('/api/account', requireUser, accountRouter);
 
 // ---- 页面守卫 ----

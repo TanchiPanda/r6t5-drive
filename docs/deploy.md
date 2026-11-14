@@ -192,3 +192,83 @@ docker compose logs -f drive
 | 页面 403 且提示无权限 | 普通用户访问了 `/admin/**` | 属预期守卫；管理后台需管理员会话 |
 | 健康检查不通过 | 进程未起来 / 端口未监听 | `docker compose logs drive` 看启动报错；核对 `PORT` 与端口映射 |
 | 升级后旧会话失效 | `SESSION_SECRET` 变更 | 沿用原密钥；用户重新登录即可 |
+
+## 9. WebDAV 挂载
+
+应用内置一个最小可用 WebDAV 端点，供 macOS Finder、Windows 资源管理器及第三方 WebDAV 客户端直接挂载。鉴权使用 **HTTP Basic**：用户名是账号邮箱，密码是在「账号 → 应用密码」里生成的应用密码（不是登录密码）。
+
+### 9.1 连接信息
+
+| 项 | 值 |
+|---|---|
+| 挂载地址 | `http://<host>:5212/dav`（反代到 HTTPS 时用 `https://<host>/dav`） |
+| 用户名 | 账号邮箱（如 `alice@example.com`） |
+| 密码 | 应用密码（`r6t5-XXXX-XXXX-XXXX` 形式，仅生成那一次明文可见） |
+
+> WebDAV 端点只认应用密码 Basic Auth，不接受浏览器会话 Cookie；在客户端里填应用密码即可。
+
+### 9.2 反向代理注意事项
+
+WebDAV 依赖 `PROPFIND`、`MKCOL`、`MOVE` 等方法与 `Destination` 头，反代时需要保留：
+
+- 放行 `PROPFIND`、`MKCOL`、`MOVE`、`COPY`、`LOCK` 等 WebDAV 方法（不要只代理 GET/POST/PUT/DELETE）；
+- 透传 `Destination`、`Overwrite`、`Depth` 等请求头；
+- 沿用第 2 节的关闭请求体缓冲、放开上传大小限制配置。
+
+Nginx 示例（在已有 `location /` 基础上确认方法与头未被过滤）：
+
+```nginx
+location /dav {
+    proxy_pass http://127.0.0.1:5212;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP          $remote_addr;
+    proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto  $scheme;
+
+    # 透传 WebDAV 必需头
+    proxy_set_header Destination        $http_destination;
+    proxy_set_header Overwrite          $http_overwrite;
+    proxy_set_header Depth              $http_depth;
+
+    proxy_request_buffering off;
+    proxy_buffering off;
+    client_max_body_size 0;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}
+```
+
+### 9.3 macOS Finder
+
+1. 打开 **Finder**，菜单栏 **前往 → 连接服务器**（快捷键 `⌘K`）。
+2. 服务器地址填 `http://<host>:5212/dav`，点 **连接**。
+3. 认证方式选 **注册用户**：
+   - 名称：账号邮箱；
+   - 密码：应用密码。
+4. 点 **连接**，即可在 Finder 中浏览、上传、下载与改名。
+
+> 若 Finder 提示无法连接，确认地址末尾是 `/dav`；HTTPS 站点用 `https://<host>/dav`。
+
+### 9.4 Windows 资源管理器
+
+1. 打开 **此电脑**，顶部 **计算机 → 映射网络驱动器**（或右键 **此电脑 → 映射网络驱动器**）。
+2. 文件夹地址填：
+   - `\\<host>@5212\dav`（本机/局域网直连示例：`\\127.0.0.1@5212\dav`）；
+   - 经 HTTPS 反代时，部分版本需用 `https://<host>/dav` 形式。
+3. 勾选 **使用其他凭据连接**，在弹出的 Windows 安全提示里输入：
+   - 用户名：账号邮箱；
+   - 密码：应用密码。
+4. 完成后盘符下即出现 WebDAV 目录。
+
+> Windows 自带 WebDAV 客户端默认走 **Basic 认证**；若站点只放行 NTLM/协商认证，需要在客户端侧或策略上允许 Basic。家庭/内网直连通常无需额外配置。
+
+### 9.5 常见问题
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| 挂载后弹出认证框，反复返回 401 | 密码填成了登录密码，或应用密码已被撤销 | 到「账号 → 应用密码」重新生成一条，用新密码挂载；确认该应用密码未撤销 |
+| 新建目录 / 上传返回 409 | 父目录不存在（WebDAV 语义：不会自动补上级目录） | 先在客户端或网页端建好上级目录，再写入 |
+| 上传 / 改名 / 删除返回 403 `strategy_readonly` | 目标目录绑定的是只读存储策略（如 GitHub 归档） | 只读策略下不能写入、删除或改名；换到可写目录操作 |
+| 大文件上传中断 / 413 | 代理层限制了请求体，或超出用户组单文件配额 | 按第 2 节关闭代理缓冲并放开 `client_max_body_size`；超限属应用配额，需调高用户组上限 |
+| Finder/资源管理器列目录为空 | 对端策略为远端只读仓库且本地无元数据，或目录本身为空 | 先用网页端确认该目录下有文件；远端列举失败时会降级为空态 |
