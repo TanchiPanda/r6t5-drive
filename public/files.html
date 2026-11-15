@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>文件 · R6T5 Drive</title>
-<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/branding/favicon">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/assets/tokens.css">
 <link rel="stylesheet" href="/assets/base.css">
 <link rel="stylesheet" href="/assets/app.css">
@@ -12,13 +13,14 @@
 <body data-page="files">
 <div class="shell">
   <aside class="sidebar">
-    <div class="brand"><span class="dot"></span><div>R6T5 Drive<small>个人空间</small></div></div>
+    <div class="brand"><img class="brand-mark" data-brand-logo src="/assets/favicon.svg" width="18" height="18" alt=""><div><span data-brand-name>R6T5 Drive</span><small>个人空间</small></div></div>
     <nav class="nav">
       <a href="/files" class="active"><span class="ic">▤</span>文件</a>
       <a href="/account"><span class="ic">◫</span>我的容量</a>
       <a href="#" id="nav-trash"><span class="ic">♻</span>回收站</a>
       <a href="#" id="nav-share"><span class="ic">↗</span>我的分享</a>
     </nav>
+    <div data-brand-sidehtml></div>
     <div class="side-foot">
       <div id="whoami" class="faint">未登录</div>
       <a href="#" id="logout-link" class="faint">退出登录</a>

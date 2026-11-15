@@ -34,6 +34,8 @@ import appPasswordsRouter from './routes/apppasswords.js';
 import officeRouter, { officePublicRouter } from './routes/office.js';
 import downloadsRouter from './routes/downloads.js';
 import integrationsRouter from './routes/integrations.js';
+import adminBrandingRouter from './routes/admin-branding.js';
+import { brandingApiRouter, brandingAssetRouter, manifestHandler } from './routes/branding-public.js';
 
 const app = express();
 
@@ -69,7 +71,13 @@ adminApi.use('/settings', adminSettingsRouter);
 adminApi.use('/audit', adminAuditRouter);
 adminApi.use('/trash', adminTrashRouter);
 adminApi.use('/shares', adminSharesRouter);
+adminApi.use('/branding', adminBrandingRouter);
 app.use('/api/admin', adminApi);
+
+// 品牌外观：公开配置（登录页免登录读取）与品牌静态文件 / manifest
+app.use('/api/branding', brandingApiRouter);
+app.use('/branding', brandingAssetRouter);
+app.get('/manifest.webmanifest', manifestHandler);
 
 // ---- 用户端文件 / 回收站 / 账号 ----
 // 预览必须挂在 /api/files 之前，否则会被 filesRouter 的根路由吃掉

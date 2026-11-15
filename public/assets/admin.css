@@ -227,3 +227,16 @@ td .row-actions .btn{white-space:nowrap}
   font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--fg-dim);
   word-break:break-all;white-space:pre-wrap;
 }
+
+/* ---------- P8-A：品牌与外观 ---------- */
+.brand-slots{display:flex;flex-direction:column;gap:var(--s4)}
+.brand-slot-head{display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s2)}
+.brand-slot-head label{font-size:var(--fs-sm);color:var(--fg-dim)}
+.brand-slot-meta{margin-top:var(--s2);word-break:break-all}
+.file-btn{cursor:pointer;white-space:nowrap}
+.file-btn input{position:absolute;opacity:0;pointer-events:none}
+.brand-sidehtml-frame{
+  width:100%;min-height:60px;max-height:160px;height:120px;
+  border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;overflow-y:auto;
+}
+#m-brand-preview .modal-body .brand-sidehtml-frame{height:200px;max-height:260px}

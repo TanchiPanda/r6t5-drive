@@ -1534,6 +1534,108 @@
   /* ---------- 站点设置 settings ---------- */
   let settingGroups = [];
 
+  /* ---------- 品牌与外观（P8-A） ---------- */
+  const BRAND_SLOT_FIELDS = {
+    logoLight: 'logoLightUrl', logoDark: 'logoDarkUrl', favicon: 'faviconUrl',
+    icon192: 'icon192Url', iconLarge: 'iconLargeUrl',
+  };
+  const BRAND_FALLBACKS = {
+    logoLight: '/assets/favicon.svg', logoDark: '/assets/icons/favicon.svg',
+    favicon: '/assets/favicon.svg', icon192: '/assets/icons/favicon.svg',
+    iconLarge: '/assets/icons/favicon.svg',
+  };
+
+  function brandRenderSlots(cfg) {
+    Admin.$$('#brand-slots .brand-slot').forEach(wrap => {
+      const slot = wrap.dataset.slot;
+      const field = BRAND_SLOT_FIELDS[slot];
+      const value = (cfg && cfg[field]) || '';
+      wrap.querySelector('[data-brand-url]').value = value;
+      wrap.querySelector('[data-brand-default]').classList.toggle('hide', !!value);
+      wrap.querySelector('[data-brand-meta]').textContent = value
+        ? '当前：' + value
+        : '回落默认 ' + BRAND_FALLBACKS[slot];
+    });
+    const ta = Admin.$('#b-sidebarHtml');
+    if (ta) ta.value = (cfg && cfg.sidebarHtml) || '';
+  }
+
+  async function initBrandSettings() {
+    const box = Admin.$('#brand-slots');
+    if (!box) return;
+    let cfg;
+    try { cfg = await Admin.get('/api/admin/branding'); }
+    catch (e) { R6T5.toastError(e); return; }
+    brandRenderSlots(cfg);
+
+    async function reloadBrand() {
+      try { const c = await Admin.get('/api/admin/branding'); brandRenderSlots(c); } catch (_) {}
+      R6T5.brand.load();
+    }
+
+    // 上传
+    Admin.$$('#brand-slots [data-brand-file]').forEach(input => {
+      input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const slot = input.closest('.brand-slot').dataset.slot;
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+          const r = await R6T5.request('/api/admin/branding/upload?slot=' + encodeURIComponent(slot), { method: 'POST', body: fd });
+          R6T5.toast('已上传 ' + slot, 'ok');
+          input.value = '';
+          await reloadBrand();
+        } catch (e) { R6T5.toastError(e); input.value = ''; }
+      });
+    });
+
+    // 清除
+    Admin.$$('#brand-slots [data-brand-clear]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const slot = btn.closest('.brand-slot').dataset.slot;
+        try {
+          await Admin.del('/api/admin/branding/' + encodeURIComponent(slot));
+          R6T5.toast('已清除 ' + slot, 'ok');
+          await reloadBrand();
+        } catch (e) { R6T5.toastError(e); }
+      });
+    });
+
+    // 预览
+    const previewBtn = Admin.$('#b-preview-btn');
+    if (previewBtn) previewBtn.addEventListener('click', () => {
+      const raw = Admin.$('#b-sidebarHtml').value || '';
+      const clean = R6T5.sanitizeSidebarHtml(raw);
+      const frame = Admin.$('#brand-preview-frame');
+      frame.srcdoc = R6T5.brand.sideHtmlDoc(clean || '<p>（无内容）</p>', R6T5.theme.get());
+      frame.onload = () => R6T5.brand.fitFrame(frame, 260);
+      R6T5.modal.open('#m-brand-preview');
+    });
+
+    // 保存
+    const saveBtn = Admin.$('#b-save-btn');
+    if (saveBtn) saveBtn.addEventListener('click', async () => {
+      const body = {};
+      Admin.$$('#brand-slots .brand-slot').forEach(wrap => {
+        const slot = wrap.dataset.slot;
+        body[BRAND_SLOT_FIELDS[slot]] = wrap.querySelector('[data-brand-url]').value.trim();
+      });
+      body.sidebarHtml = Admin.$('#b-sidebarHtml').value;
+      try {
+        const r = await Admin.patch('/api/admin/branding', body);
+        const item = r && r.item;
+        if (item) brandRenderSlots(item);
+        if (r && r.sidebarHtmlRaw && item && item.sidebarHtml && r.sidebarHtmlRaw !== item.sidebarHtml) {
+          R6T5.toast('部分侧边栏内容已被安全移除', 'warn');
+        } else {
+          R6T5.toast('品牌配置已保存', 'ok');
+        }
+        await reloadBrand();
+      } catch (e) { R6T5.toastError(e); }
+    });
+  }
+
   async function initSettings() {
     Admin.bindLogout();
     await Admin.requireAdmin();
@@ -1572,6 +1674,7 @@
 
     f.addEventListener('submit', onSettingsSave);
 
+    initBrandSettings();
     await initUpdateStatus();
   }
 
