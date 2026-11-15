@@ -15,7 +15,7 @@ import {
   getNodeByPath, insertNode, listChildren, childrenCount, descendantsOf,
   softDeleteRecursive, searchNodes,
 } from '../services/nodes.js';
-import { quotaForUser } from '../services/quota.js';
+import { quotaForUser, quotaBig } from '../services/quota.js';
 import { recordTraffic } from '../services/traffic.js';
 import { writeAudit } from '../services/audit.js';
 import * as registry from '../services/storage/registry.js';
@@ -224,17 +224,18 @@ router.post('/upload', (req, res, next) => {
         if (!parent || !parent.isDir) { cleanup(); throw notFound('目标目录不存在'); }
 
         const quota = quotaForUser(req.user);
-        const size = Number(req.file.size);
+        const qb = quotaBig(quota);
+        const size = BigInt(req.file.size);
 
-        if (size > quota.maxFileSizeBytes) {
+        if (size > qb.maxFile) {
           cleanup();
-          throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: size });
+          throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: size.toString() });
         }
-        if (quota.usedBytes + size > quota.spaceLimitBytes) {
+        if (qb.used + size > qb.spaceLimit) {
           cleanup();
-          throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: size });
+          throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: size.toString() });
         }
-        if (quota.traffic7dUsedBytes + size > quota.traffic7dLimitBytes) {
+        if (qb.trafficUsed + size > qb.trafficLimit) {
           cleanup();
           throw quotaTraffic({ limitBytes: quota.traffic7dLimitBytes, usedBytes: quota.traffic7dUsedBytes });
         }
@@ -246,7 +247,7 @@ router.post('/upload', (req, res, next) => {
 
         try {
           await getDriver(hit.strategy.type).writeFromTemp(hit.strategy, targetPath, tmpFile, {
-            size, mime: req.file.mimetype, name: fileName,
+            size: Number(size), mime: req.file.mimetype, name: fileName,
           });
         } catch (e) { cleanup(); throw e; }
         cleanup();
@@ -254,16 +255,16 @@ router.post('/upload', (req, res, next) => {
         let node;
         if (existing) {
           db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, storageId = ?, updatedAt = ? WHERE id = ?')
-            .run(size, req.file.mimetype, hit.strategy.id, nowIso(), existing.id);
+            .run(size.toString(), req.file.mimetype, hit.strategy.id, nowIso(), existing.id);
           node = getNodeByPath(targetPath);
         } else {
           node = insertNode({
             email, parentId: parent.id, name: fileName, path: targetPath,
-            isDir: false, sizeBytes: size, mime: req.file.mimetype, storageId: hit.strategy.id,
+            isDir: false, sizeBytes: size.toString(), mime: req.file.mimetype, storageId: hit.strategy.id,
           });
         }
-        recordTraffic(email, 'upload', size);
-        writeAudit({ email, action: 'upload', target: targetPath, bytes: size, ip: clientIp(req) });
+        recordTraffic(email, 'upload', size.toString());
+        writeAudit({ email, action: 'upload', target: targetPath, bytes: size.toString(), ip: clientIp(req) });
         res.status(201).json({ item: itemView(node, hit.strategy), quota: quotaForUser(req.user), strategy: strategyView(hit) });
       } catch (e) { next(e); }
     })();

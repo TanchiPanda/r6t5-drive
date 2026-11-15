@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { trafficInWindow, trafficToday, uploadSeries } from '../services/traffic.js';
 import * as registry from '../services/storage/registry.js';
+import { toByteString } from '../lib/bytes.js';
 
 const router = Router();
 
@@ -36,12 +37,14 @@ router.get('/', (req, res) => {
     })),
   };
 
-  const groupRows = db.prepare('SELECT * FROM groups ORDER BY createdAt ASC').all();
+  const groupRows = db.prepare(`
+    SELECT *, CAST(spaceLimitBytes AS TEXT) AS spaceLimitBytes
+    FROM groups ORDER BY createdAt ASC`).all();
   const groups = groupRows.map((g) => ({
     id: g.id,
     name: g.name,
     userCount: db.prepare('SELECT COUNT(*) AS n FROM users WHERE groupId = ?').get(g.id).n,
-    spaceLimitBytes: Number(g.spaceLimitBytes),
+    spaceLimitBytes: toByteString(g.spaceLimitBytes),
   }));
 
   const recentRows = db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 10').all();

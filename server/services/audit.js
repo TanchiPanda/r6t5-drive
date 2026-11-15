@@ -8,6 +8,8 @@ const VALID_ACTIONS = new Set([
   // P6 账号来源 / 本地账号管理
   'user_ban', 'user_unban', 'user_delete', 'user_create', 'user_password',
   'user_source_switch',
+  // P7 自助注册 / sudo 用户组
+  'signup', 'group_update',
 ]);
 
 export function writeAudit({ email, action, target = null, bytes = null, ip = null, detail = null }) {

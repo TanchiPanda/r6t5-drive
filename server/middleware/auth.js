@@ -57,9 +57,39 @@ export function requireUser(req, res, next) {
     .catch(next);
 }
 
-export function requireAdminApi(req, res, next) {
+/**
+ * P7 sudo 用户组判定：
+ * 1) 管理密码会话有效 → 通过（via='password'）；
+ * 2) 否则读 user 会话 → 查库得 user 与其 group，group.is_sudo === 1 且未被封禁 → 通过
+ *    （via='sudo'，req.sudoUser = { email, groupId, groupName }）；
+ * 3) 都不是 → 普通登录用户 403，未登录 401。
+ * 每次请求都查库：组改 is_sudo 后立即生效，被移出 sudo 组的下一个请求即 403。
+ */
+export function resolveAdminAccess(req) {
   const admin = readAdminSession(req, db);
-  if (admin && admin.admin) return next();
+  if (admin && admin.admin) return { via: 'password' };
+
+  const session = readUserSession(req, db);
+  if (!session || !session.email) return null;
+
+  const email = String(session.email).toLowerCase();
+  const user = getUserByEmail(email);
+  if (!user) return null;
+  if (user.status === 'banned' || user.disabled === 1) return null;
+
+  const group = resolveGroup(user);
+  if (group && group.is_sudo === 1) {
+    return { via: 'sudo', email, groupId: group.id, groupName: group.name };
+  }
+  return null;
+}
+
+export function requireAdminApi(req, res, next) {
+  const access = resolveAdminAccess(req);
+  if (access) {
+    if (access.via === 'sudo') req.sudoUser = { email: access.email, groupId: access.groupId, groupName: access.groupName };
+    return next();
+  }
   const user = readUserSession(req, db);
   if (user) return next(forbidden('普通用户无权访问管理接口'));
   return next(unauthorized('未登录管理员'));
@@ -85,8 +115,11 @@ const ADMIN_403_HTML = `<!DOCTYPE html>
 </div></body></html>`;
 
 export function requireAdminPage(req, res, next) {
-  const admin = readAdminSession(req, db);
-  if (admin && admin.admin) return next();
+  const access = resolveAdminAccess(req);
+  if (access) {
+    if (access.via === 'sudo') req.sudoUser = { email: access.email, groupId: access.groupId, groupName: access.groupName };
+    return next();
+  }
   res.status(403).type('text/html; charset=utf-8').send(ADMIN_403_HTML);
 }
 

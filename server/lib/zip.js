@@ -395,7 +395,8 @@ export function assertExtractSafe(entries, quota) {
     if (e.uncompSize > ZIP32_LIMIT) {
       throw zipTooLarge({ entry: e.name, uncompressedSize: e.uncompSize, limitBytes: ZIP32_LIMIT });
     }
-    if (quota && e.uncompSize > quota.maxFileSizeBytes) {
+    const entrySize = BigInt(e.uncompSize);
+    if (quota && entrySize > BigInt(quota.maxFileSizeBytes)) {
       throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: e.uncompSize, entry: e.name });
     }
     total += e.uncompSize;

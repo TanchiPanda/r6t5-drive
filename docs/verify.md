@@ -315,3 +315,54 @@ PREVIEW_BASE=http://127.0.0.1:8090 node tools/test-p3-preview.mjs # 14/14（脚�
 | S3 / GitHub 绑定目录下删号清远端对象 | 本机只有 volume 与本地 `tools/fake-s3.mjs`；跨策略删对象复用现有驱动 `remove()`，未在真实 S3/MinIO 上验证目录级清理 | 接真实 S3 后对绑定目录下的用户删号，核对远端对象与前缀被清 |
 | 真实 scrypt 性能 / 跨版本会话兼容 | 仅在本机 Node 22 实测哈希与校验通过 | 生产压测下确认 scrypt `N=16384` 的登录耗时可接受 |
 
+
+## 11. P7：自助注册 / sudo / 空间单位 / 版本发布（实测）
+
+### 11.1 逐项结果（实测）
+
+| # | 接口 / 能力 | 规则 | 结果 | 证据 |
+|---|---|---|---|---|
+| 1 | `POST /api/auth/signup`（volume 自助注册） | body `{email, password, passwordConfirm}`；参数校验：邮箱沿用 `EMAIL_RE`、密码 ≥ 8 位、两次一致；通过校验后在分配组下建本地号（scrypt、`status=active`、`registeredAt=now`），直接建会话，201 `{ok, user, setup:{next:'ready'}}` | 通过 | P7 1d/1e/2a/2b；smoke 57d1/57d2/57e |
+| 2 | 注册分配组规则 | `SELECT * FROM groups WHERE allow_self_signup = 1 ORDER BY createdAt ASC, id ASC LIMIT 1`：开启自助注册的组中按 `createdAt` 最早（`id` 兜底）分配；先建的组优先，关闭后落到下一个 | 通过 | P7 1d（落先建的 A）、1f（A 关闭后落 B） |
+| 3 | 注册错误码与统一文案 | 无开放组 → 403 `signup_closed`「当前未开放自助注册」；邮箱已存在（含重名封禁）→ 400 `invalid_signup`「注册信息无效」，响应不出现 duplicate/exists/已存在/已注册，内部仅审计 `signup`(detail `signup_duplicate`) | 通过 | P7 1g、2c；smoke 57f、57g |
+| 4 | `GET /api/auth/signup-config` | `{available, minPasswordLength:8, source:'volume'|'supabase', reason:'ok'|'closed'|'admin_disabled'}`；volume 无开放组 → `available:false, reason:'closed'` | 通过 | P7 0b/1c/1h；smoke 57c |
+| 5 | 同 IP 注册令牌桶 | 容量 **5**，每分钟补 **1** 个；按 `req.ip \|\| req.socket.remoteAddress`；**参数非法（格式/长度/两次不一致）不计数**，通过参数校验的尝试（含邮箱已存在、注册关闭）都计数；超限 429 `rate_limited`「注册尝试过多，请稍后再试」 | 通过 | P7 3/3b；smoke 段内计数未触顶 |
+| 6 | sudo 用户组判定 | 位置：`server/middleware/auth.js` `resolveAdminAccess()`。顺序：管理密码会话有效 → `via='password'`；否则读 user 会话查库取 user/group，`group.is_sudo === 1` 且未封禁 → `via='sudo'`（`req.sudoUser={email,groupId,groupName}`）；否则普通用户 403、未登录 401。**每次请求都查库**，改 `is_sudo` 后下一请求即生效 | 通过 | P7 4a–4g；smoke 57h0/57h1/57h2/57i1/57i2 |
+| 7 | `GET /api/admin/session`（sudo） | 密码会话返回老结构 + `via:'password'`；sudo 会话返回 `{ok, admin:{via:'sudo', email, groupId, groupName}}`；都不是 → 401 | 通过 | P7 4d；smoke 57h2 |
+| 8 | 空间单位换算 | `server/lib/bytes.js`，`UNITS=[B,KB,MB,GB,TB,PB,EB]` 全 1024 进制；`parseSizeToBytes(value,unit)` 十进制字符串精确换算（允许小数），不先 `Number()` 再乘；`formatSize` 人类可读；`toByteString` 十进制字符串供 JSON | 通过 | P7 5a/5b/5c/5d；smoke 57j1 |
+| 9 | SQLite INTEGER 上限 | `MAX_SQLITE_INT=9223372036854775807`（约 8 EB）；超限抛 400 `invalid_input`「超出 SQLite INTEGER 上限（约 8 EB）」，`details {field, max:'9223372036854775807'}`；不截断、不改 REAL。实测 1 EB=`1152921504606846976`，1.5 TB=`1649267441664`，0.5 MB=`524288`，200 MB=`209715200`，16 EB(=2^64) 被拒 | 通过 | P7 5a–5f；smoke 57k |
+| 10 | 限额入参/出参契约 | 入参两种写法：`spaceLimitBytes/maxFileSizeBytes/traffic7dLimitBytes`（数字或十进制字符串）或 `spaceLimit/maxFileSize/traffic7dLimit:{value,unit}`；出参 `*Bytes` 为十进制字符串，另附 `*Text` 人类可读；配额比较统一 BigInt（`BigInt(size) > limit`），无残留 MB 常量比较 | 通过 | P7 5f/6a/6b；smoke 57j1 |
+| 11 | `GET /api/admin/update-status` | 管理员会话；200 且非 5xx；`current.version` 非空字符串。`checked:true` 时再断言 `latest.upgradeCommand` 非空、`hasUpdate` 为布尔；`checked:false`（离线/远端 404/JSON 非法/超时）为降级，不报错。沙箱实测 `checked:false, reason:http_404, version=20261115a` | 通过（降级路径） | smoke 57l |
+| 12 | P1–P6 不回归 | 全新隔离库跑回归脚本 | 通过 | 见 11.3 |
+
+### 11.2 关键实现位置
+
+- 注册分配组 SQL：`server/routes/auth.js` `pickSignupGroup()`。
+- 令牌桶：`server/routes/auth.js`（容量 5 / 每分钟补 1，进程内存态，Map 按 IP 计数）。
+- sudo 判定：`server/middleware/auth.js` `resolveAdminAccess()`；`requireAdminApi` / `requireAdminPage` 复用同一判定。
+- 单位换算：`server/lib/bytes.js`（`parseSizeToBytes` / `assertMaxSqliteInt` / `formatSize` / `toByteString` / `MAX_SQLITE_INT`）。
+- 限额 BigInt 比较：`server/services/quota.js`（`quotaForUser` + `quotaBig`）、`server/routes/files.js`、`server/services/chunks.js`、`server/services/archive.js`、`server/routes/dav.js`。
+- 错误码：`server/lib/errors.js` — `signup_closed`(403)、`invalid_signup`(400)、`rate_limited`(429)；审计白名单补 `signup`、`group_update`（`server/services/audit.js`）。
+
+### 11.3 已执行的自检命令与汇总
+
+隔离环境：`DB_PATH=<db> STORAGE_ROOT=<vol> PORT=<port> DEV_AUTH=1 ADMIN_PASSWORD=test123 node server/index.js`，脚本带 `BASE` 指向实例。
+
+| 脚本 | 汇总（干净隔离库，FAIL=0） |
+|---|---|
+| `tools/test-p7-signup-sudo-units.mjs` | **35/35 通过** |
+| `tools/smoke-test.mjs`（并入 57x 共 18 项） | **90/90 通过**（原 72 + P7 段 18） |
+| `tools/test-p6-user-source.mjs` | **39/39 通过** |
+| `tools/test-p4-uploads.mjs` | **PASS=28 FAIL=0 总计=28** |
+| `tools/test-p4-archive.mjs` | **PASS=39 FAIL=0 总计=39** |
+
+> 回归脚本须在干净库上跑；同一库二次复跑会因残留节点/会话出现 409/404，属测试隔离问题，非服务端回归。
+
+### 11.4 未验证 / 沙箱限制（如实说明）
+
+| 项 | 原因 | 上线前怎么补 |
+|---|---|---|
+| 真实 Supabase 注册 / 登录 / token 续签 | 沙箱无可用 Supabase 实例，`*.supabase.co` 不可达；supabase 分支保持现有行为，仅 volume 路径端到端验证 | 接真实 Supabase 项目跑一遍注册、登录、建号、改密、删号链路 |
+| 分布式注册限流 | 令牌桶为单进程内存 Map，不跨实例/不共享；多副本部署下各实例独立计数 | 接 Redis 等共享存储做跨实例令牌桶 |
+| 真实 `docker compose` 升级 | 未在本机执行 `docker compose pull && docker compose up -d`；升级命令来自 `latest.json.upgradeCommand` | 推送 `latest.json` 到远端后，在目标环境实跑升级并核对版本号切换 |
+| 远端 `latest.json` 可拉取 | 沙箱内 `raw.githubusercontent.com/.../main/latest.json` 返回 404（`checked:false, reason:http_404`）；需推送后远端才可拉，`checked:true` 分支（`latest.upgradeCommand`、`hasUpdate` 比较）未在沙箱命中 | 推送 `latest.json` 后复测 `checked:true` 路径 |

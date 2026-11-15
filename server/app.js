@@ -4,7 +4,7 @@ import { ENV } from './config.js';
 import { db } from './db.js';
 import { readUserSession, readAdminSession } from './lib/session.js';
 import { ApiError, errorBody } from './lib/errors.js';
-import { requireAdminApi, requireAdminPage, requireUser } from './middleware/auth.js';
+import { requireAdminApi, requireAdminPage, requireUser, resolveAdminAccess } from './middleware/auth.js';
 
 import setupRouter, { adminSetupRouter } from './routes/setup.js';
 import authRouter, { meRouter } from './routes/auth.js';
@@ -16,6 +16,7 @@ import adminStorageRouter from './routes/admin-storage.js';
 import adminBindingsRouter from './routes/admin-bindings.js';
 import adminUsersRouter from './routes/admin-users.js';
 import adminUserSourceRouter from './routes/admin-user-source.js';
+import adminUpdateRouter from './routes/admin-update.js';
 import adminSettingsRouter from './routes/admin-settings.js';
 import adminAuditRouter from './routes/admin-audit.js';
 import adminTrashRouter from './routes/admin-trash.js';
@@ -63,6 +64,7 @@ adminApi.use('/storage', adminStorageRouter);
 adminApi.use('/bindings', adminBindingsRouter);
 adminApi.use('/users', adminUsersRouter);
 adminApi.use('/user-source', adminUserSourceRouter);
+adminApi.use('/update-status', adminUpdateRouter);
 adminApi.use('/settings', adminSettingsRouter);
 adminApi.use('/audit', adminAuditRouter);
 adminApi.use('/trash', adminTrashRouter);
@@ -101,7 +103,8 @@ app.use('/admin', (req, res, next) => {
 
 app.get(['/admin', '/admin/'], (req, res) => {
   const admin = readAdminSession(req, db);
-  res.redirect(admin && admin.admin ? '/admin/home.html' : '/admin/login');
+  const hasAdmin = (admin && admin.admin) || !!resolveAdminAccess(req);
+  res.redirect(hasAdmin ? '/admin/home.html' : '/admin/login');
 });
 
 app.get('/files', userPageGuard, (req, res, next) => {

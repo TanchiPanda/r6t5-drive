@@ -2,22 +2,47 @@ import { Router } from 'express';
 import { db, getSetting, setSetting } from '../db.js';
 import { readAdminSession, setAdminCookie, clearCookies, verifyPassword } from '../lib/session.js';
 import { writeAudit } from '../services/audit.js';
-import { loginFails, recordLoginFail, clearLoginFails } from '../middleware/auth.js';
+import { loginFails, recordLoginFail, clearLoginFails, requireAdminApi } from '../middleware/auth.js';
 import { unauthorized, badRequest } from '../lib/errors.js';
 import { nowIso } from '../lib/format.js';
+import { getUserByEmail, publicUser } from '../services/nodes.js';
+import { resolveGroup } from '../services/quota.js';
 
 const router = Router();
 const FAIL_KEY = 'admin';
 
 router.get('/session', (req, res, next) => {
   const admin = readAdminSession(req, db);
-  if (!admin || !admin.admin) return next(unauthorized('未登录管理员'));
-  res.json({
-    ok: true,
-    admin: {
-      passwordSource: getSetting('admin_password_source', 'generated'),
-      loginAt: admin.loginAt || null,
-    },
+  if (admin && admin.admin) {
+    res.json({
+      ok: true,
+      via: 'password',
+      admin: {
+        via: 'password',
+        passwordSource: getSetting('admin_password_source', 'generated'),
+        loginAt: admin.loginAt || null,
+      },
+    });
+    return;
+  }
+  // sudo 用户组会话：由 requireAdminApi 解析后挂在 req.sudoUser；本路由先跑一次判定
+  requireAdminApi(req, res, (err) => {
+    if (err) return next(err);
+    if (req.sudoUser) {
+      writeAudit({ email: req.sudoUser.email, action: 'admin_login', detail: `sudo:${req.sudoUser.email}` });
+      res.json({
+        ok: true,
+        via: 'sudo',
+        admin: {
+          via: 'sudo',
+          email: req.sudoUser.email,
+          groupId: req.sudoUser.groupId,
+          groupName: req.sudoUser.groupName,
+        },
+      });
+      return;
+    }
+    next(unauthorized('未登录管理员'));
   });
 });
 

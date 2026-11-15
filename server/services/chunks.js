@@ -16,7 +16,7 @@ import {
   uploadPartRange, uploadIncomplete, ApiError,
 } from '../lib/errors.js';
 import { getNodeByPath, insertNode } from './nodes.js';
-import { quotaForUser } from './quota.js';
+import { quotaForUser, quotaBig } from './quota.js';
 import { recordTraffic } from './traffic.js';
 import { writeAudit } from './audit.js';
 import { getDriver, driverCaps } from './storage/driver.js';
@@ -140,6 +140,18 @@ export function initSession(user, body = {}) {
   }
   if (sizeBytes > MAX_SIZE_BYTES) {
     throw badRequest('invalid_input', '文件大小超出 100 GB 上限', { field: 'sizeBytes', limitBytes: MAX_SIZE_BYTES });
+  }
+
+  // 单文件 / 空间 / 流量预检（BigInt 比较；限额来自组，已字符串化）
+  const quota = quotaForUser(user);
+  const qb = quotaBig(quota);
+  const sizeBig = BigInt(sizeBytes);
+  if (sizeBig > qb.maxFile) throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: sizeBytes });
+  if (qb.used + sizeBig > qb.spaceLimit) {
+    throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: sizeBytes });
+  }
+  if (qb.trafficUsed + sizeBig > qb.trafficLimit) {
+    throw quotaTraffic({ limitBytes: quota.traffic7dLimitBytes, usedBytes: quota.traffic7dUsedBytes });
   }
 
   let chunkSize = body.chunkSize == null ? DEFAULT_CHUNK_SIZE : Number(body.chunkSize);
@@ -361,13 +373,14 @@ export async function completeSession(user, uploadId, { mime } = {}) {
     const hit = resolveFor(user, targetPath);
     assertWritable(hit.strategy, targetPath);
 
-    const size = Number(row.sizeBytes);
+    const size = BigInt(row.sizeBytes);
     const quota = quotaForUser(user);
-    if (size > quota.maxFileSizeBytes) throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: size });
-    if (quota.usedBytes + size > quota.spaceLimitBytes) {
-      throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: size });
+    const qb = quotaBig(quota);
+    if (size > qb.maxFile) throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: size.toString() });
+    if (qb.used + size > qb.spaceLimit) {
+      throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: size.toString() });
     }
-    if (quota.traffic7dUsedBytes + size > quota.traffic7dLimitBytes) {
+    if (qb.trafficUsed + size > qb.trafficLimit) {
       throw quotaTraffic({ limitBytes: quota.traffic7dLimitBytes, usedBytes: quota.traffic7dUsedBytes });
     }
 
@@ -389,17 +402,17 @@ export async function completeSession(user, uploadId, { mime } = {}) {
     try {
       if (existing) {
         db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, storageId = ?, updatedAt = ? WHERE id = ?')
-          .run(mergedSize, mime || existing.mime || 'application/octet-stream', hit.strategy.id, nowIso(), existing.id);
+          .run(String(mergedSize), mime || existing.mime || 'application/octet-stream', hit.strategy.id, nowIso(), existing.id);
         node = getNodeByPath(targetPath);
       } else {
         const parent = getNodeByPath(row.parentPath) || ensureDirNodes(user.email, row.parentPath);
         node = insertNode({
           email: user.email, parentId: parent.id, name: row.name, path: targetPath,
-          isDir: false, sizeBytes: mergedSize, mime: mime || 'application/octet-stream', storageId: hit.strategy.id,
+          isDir: false, sizeBytes: String(mergedSize), mime: mime || 'application/octet-stream', storageId: hit.strategy.id,
         });
       }
-      recordTraffic(user.email, 'upload', mergedSize);
-      writeAudit({ email: user.email, action: 'upload', target: targetPath, bytes: mergedSize, ip: null });
+      recordTraffic(user.email, 'upload', String(mergedSize));
+      writeAudit({ email: user.email, action: 'upload', target: targetPath, bytes: String(mergedSize), ip: null });
     } catch (e) {
       abortAfterMergeFailure(user, row);
       throw e;

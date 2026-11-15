@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS groups (
   traffic7dLimitBytes INTEGER NOT NULL,
   isDefault           INTEGER NOT NULL DEFAULT 0,
   defaultStrategyId   TEXT,
+  allow_self_signup   INTEGER NOT NULL DEFAULT 0,
+  is_sudo             INTEGER NOT NULL DEFAULT 0,
   createdAt           TEXT NOT NULL
 );
 

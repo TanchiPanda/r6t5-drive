@@ -54,6 +54,13 @@ export function migrate() {
   if (!groupCols.includes('defaultStrategyId')) {
     db.exec('ALTER TABLE groups ADD COLUMN defaultStrategyId TEXT');
   }
+  // P7：用户组自助注册开关 + sudo 标记。老库缺列自动补，默认 0（语义不变）。
+  if (!groupCols.includes('allow_self_signup')) {
+    db.exec('ALTER TABLE groups ADD COLUMN allow_self_signup INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!groupCols.includes('is_sudo')) {
+    db.exec('ALTER TABLE groups ADD COLUMN is_sudo INTEGER NOT NULL DEFAULT 0');
+  }
 
   // P6：本地账号体系。users 表加列（老库自动迁移，数据不丢）：
   //  - passwordHash TEXT：scrypt 派生值，有值即本地账号；空 = Supabase 账号

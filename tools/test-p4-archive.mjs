@@ -304,7 +304,7 @@ async function runHttpSuite(seedData) {
   const expectBytes = sources['note.txt'].length + sources['photos/alpha.txt'].length + sources['photos/beta.txt'].length;
   check('HTTP. extract 201 extracted=3', ex.status === 201 && ex.json?.extracted === 3,
     `status=${ex.status} extracted=${ex.json?.extracted} totalBytes=${ex.json?.totalBytes} skipped=${JSON.stringify(ex.json?.skipped)}`);
-  check('HTTP. 解压字节数与源一致', ex.json?.totalBytes === expectBytes,
+  check('HTTP. 解压字节数与源一致', String(ex.json?.totalBytes) === String(expectBytes),
     `totalBytes=${ex.json?.totalBytes} expect=${expectBytes}`);
 
   // 校验解压落盘文件：走下载接口回读 sha256（不直连服务端磁盘）

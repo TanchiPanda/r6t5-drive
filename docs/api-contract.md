@@ -805,3 +805,157 @@ body `{ "source": "supabase"|"volume", "confirm": true }`
 
 - 沙箱内无真实 Supabase：supabase 分支只验证了「未配置时的行为」（412 / 跳过 / 409），真实 Supabase 密码登录、建号、改密、远端用户保留等链路需在有 Supabase 实例的环境复测。
 
+
+## §P7 用户组自助注册 / sudo / 空间单位
+
+### §P7-1 用户组字段（`groups` 表）
+
+**列名（snake_case，落库）↔ JSON（camelCase，对外）映射：**
+
+| 数据库列 | JSON 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|---|
+| `allow_self_signup` | `allowSelfSignup` | 布尔（0/1） | `0` | 是否允许该组参与 volume 自助注册分配 |
+| `is_sudo` | `isSudo` | 布尔（0/1） | `0` | sudo 用户组标记：组成员凭普通用户会话即可进入管理控制台 |
+
+**迁移（`db.migrate()`）**：用 `PRAGMA table_info(groups)` 检测缺列，自动 `ALTER TABLE ADD COLUMN`；老库两列默认 `0`，语义不变。`schema.sql` 新库直接带这两列。
+
+**注册分配组 SQL**（volume 自助注册取组，`server/routes/auth.js` `pickSignupGroup()`）：
+
+```sql
+SELECT * FROM groups
+WHERE allow_self_signup = 1
+ORDER BY createdAt ASC, id ASC
+LIMIT 1
+```
+
+即：开启自助注册的组中，按 `createdAt` 最早（`id` 兜底）分配；无命中组即注册关闭。
+
+**管理端组接口**（`/api/admin/groups`，`server/routes/admin-groups.js`）：
+- `POST` / `PATCH` 入参支持 `allowSelfSignup` / `isSudo`（布尔）；`serialize` 出参以布尔暴露。
+- `PATCH` 中 `isSudo` 或 `allowSelfSignup` 发生变化时写审计 `group_update`，`detail` 形如 `sudo:on`、`signup:off`（两者都变则逗号拼接）；响应返回最新 `item`。
+
+### §P7-2 注册（volume 自助注册）
+
+#### `POST /api/auth/signup`
+
+**volume 模式**，body：`{ email, password, passwordConfirm }`。
+
+| 步骤 | 规则 | 失败响应 |
+|---|---|---|
+| 邮箱格式 | 沿用现有 `EMAIL_RE` | 400 `invalid_input`，`details.field='email'`，message「邮箱格式不正确」 |
+| 密码长度 | `password` ≥ 8 位 | 400 `invalid_input`，`details.field='password'`，message「密码至少 8 位」 |
+| 两次一致 | `passwordConfirm === password` | 400 `invalid_input`，`details.field='passwordConfirm'`，message「两次输入的密码不一致」 |
+| 开放组 | 无开启 `allow_self_signup` 的组 | 403 `signup_closed`，message「当前未开放自助注册」 |
+| 邮箱已存在 | 含已封禁重名账号 | 400 `invalid_signup`，message 统一「注册信息无效」；响应**不**出现 duplicate/exists/已存在/已注册等字眼，内部仅写审计 `signup`（detail `signup_duplicate`） |
+
+**成功**：在分配组下建本地账号（scrypt 密码、`status=active`、`registeredAt=now`、`displayName` 默认空），直接建会话（复用 volume 登录那套 `{v:1, email, local:true, dev:false, exp:+7d}` + `setUserCookie`），写审计 `signup`，返回 **201** `{ ok:true, user: publicUser(...), setup:{ next:'ready' } }`。
+
+**限流（同 IP 内存令牌桶）**：
+- 参数：容量 **5**，每分钟补 **1** 个令牌；按 `req.ip || req.socket.remoteAddress` 取 IP。
+- 通过参数校验的尝试（含邮箱已存在、注册关闭）都计数；参数非法（格式/长度/两次不一致）不计入桶。
+- 超限 → 429 `rate_limited`，message「注册尝试过多，请稍后再试」。
+- 桶为进程内存态，重启即重置；不跨实例共享。
+
+**supabase 模式**：保持现有行为（`allowSignup` 设置 + Supabase `/auth/v1/signup`），不建本地号、不返回 201 本地用户结构。
+
+#### `GET /api/auth/signup-config`
+
+前端据此决定是否展示「注册」入口：
+
+```json
+{ "available": true, "minPasswordLength": 8, "source": "volume", "reason": "ok" }
+```
+
+| 字段 | 取值 |
+|---|---|
+| `available` | 布尔：是否开放注册 |
+| `minPasswordLength` | `8` |
+| `source` | `'volume'` \| `'supabase'` |
+| `reason` | `'ok'` \| `'closed'`（volume 无开放组）\| `'admin_disabled'`（supabase 未开 `allowSignup`） |
+
+#### 错误码（`server/lib/errors.js`）
+
+| HTTP | code | message | 场景 |
+|---|---|---|---|
+| 403 | `signup_closed` | 当前未开放自助注册 | volume 无开启自助注册的组 |
+| 400 | `invalid_signup` | 注册信息无效 | 邮箱已存在 / 重名封禁账号（统一文案，不泄露存在性） |
+| 429 | `rate_limited` | 注册尝试过多，请稍后再试 | 同 IP 令牌桶超限 |
+
+### §P7-3 sudo 用户组与空间单位
+
+#### sudo 判定（`server/middleware/auth.js`，`resolveAdminAccess`）
+
+判定顺序：
+1. **管理密码会话**有效 → 通过，`via='password'`；
+2. 否则读 user 会话 → 查库得 user 与其 group（`resolveGroup`），若 `group.is_sudo === 1` 且 user 未被封禁 → 通过，`via='sudo'`，挂 `req.sudoUser = { email, groupId, groupName }`；
+3. 都不是：`requireAdminApi` 对普通登录用户返回 403 `forbidden`，未登录返回 401 `unauthorized`；`requireAdminPage` 返回现有 403 HTML。
+
+**立即生效**：每次请求都查库（不缓存组标记），组改 `is_sudo` 后下一个请求即生效；被移出 sudo 组的下一个请求即 403。
+
+- `GET /api/admin/session`：密码会话返回老结构 + `via:'password'`；sudo 会话返回 `{ ok:true, admin:{ via:'sudo', email, groupId, groupName } }`；都不是 → 401。
+- `/admin` 根路径重定向（`server/app.js`）：admin 会话**或** sudo 用户会话都跳 `/admin/home.html`，否则 `/admin/login`；`/admin/*`（除登录页）页面守卫允许 sudo。
+- 普通用户登录成功后访问 `/api/admin/*` 仍 403；sudo 用户 200。
+- 审计：sudo 进入管理面板写 `admin_login`，detail `sudo:<email>`。
+
+#### 空间单位（`server/lib/bytes.js`，1024 进制，BigInt 精确换算）
+
+单位表 `UNITS = ['B','KB','MB','GB','TB','PB','EB']`，全部 1024 进制。
+
+| 导出 | 说明 |
+|---|---|
+| `parseSizeToBytes(value, unit)` | → BigInt；`value` 可为数字/十进制字符串（允许小数，如 `"1.5"`、`"0.25"`）；十进制字符串精确换算，不先 `Number()` 再乘；非法值/负数/0 抛 400 `invalid_input` |
+| `MAX_SQLITE_INT` | `9223372036854775807n`（int64 有符号上限，约 8 EB） |
+| `assertMaxSqliteInt(bytes, field)` | 超上限抛 400 `invalid_input`，message「超出 SQLite INTEGER 上限（约 8 EB）」，`details { field, max: '9223372036854775807' }`；不截断、不改 REAL 存储 |
+| `formatSize(bytes)` | 人类可读，如 `1.5 TB`、`200 MB`、`0 B`；支持 BigInt/数字/十进制字符串 |
+| `toByteString(bytes)` | 十进制字符串（供 JSON，避免 Number 精度丢失） |
+
+**组限额入参（两种写法二选一，都实现）**：
+- 旧写法：`spaceLimitBytes` / `maxFileSizeBytes` / `traffic7dLimitBytes`（数字或十进制字符串）；
+- 新写法：`spaceLimit: { value, unit }` / `maxFileSize: { value, unit }` / `traffic7dLimit: { value, unit }`。
+
+换算成 BigInt → 校验 ≥1 且 ≤ `MAX_SQLITE_INT` → 以十进制字符串绑定 INTEGER 列。
+
+**出参（`serialize`）破坏性变更**：三个 `*Bytes` 字段改为**十进制字符串**（如 `"1610612736"`），并新增 `spaceLimitText` / `maxFileSizeText` / `traffic7dLimitText` 人类可读字符串。
+
+**配额与拦截比较**（`quota.js` / `files.js` / `chunks.js` / `archive.js` / `dav.js`）：限额与已用均以 BigInt 读取/汇总，比较统一走 BigInt（`BigInt(size) > limit`）；`/api/me` 等配额响应保留原 `*Bytes` 字段名但值为十进制字符串，并新增 `spaceLimitText/usedText/spaceRemainingText/maxFileSizeText/traffic7dLimitText/traffic7dUsedText/traffic7dRemainingText`。无组默认值：10 GiB 空间 / 2 GiB 单文件 / 5 GiB 流量（BigInt 常量）。
+
+**上限示例**：1 EB = `1152921504606846976` 字节；16 EB（=2^64）超上限 → 400 `invalid_input`，`details.max='9223372036854775807'`。
+
+#### 审计动作白名单补充
+
+`server/services/audit.js` 的 `VALID_ACTIONS` 新增：`signup`、`group_update`。
+
+## §P7-4 版本发布与更新检查（管理端）
+
+### 版本与发布元数据（仓库根）
+
+| 文件 | 说明 |
+|---|---|
+| `VERSION` | 单行构建号（格式 `YYYYMMDDx`，例如 `20261115a`）。`GET /api/admin/update-status` 以它为「本地版本」 |
+| `latest.json` | 发布元数据：`version` / `issueNumber` / `commentId` / `commentUrl` / `publishedAt` / `upgradeCommand` / `notes` |
+| `tools/release.mjs` | 发版脚本：读 `VERSION` → 用 GitHub API 建 issue（标题 `Release <version>`）→ 在 issue 下建一条发布评论 → 把 `issueNumber`/`commentId`/`commentUrl`/`publishedAt` 写回 `latest.json`。PAT 只从环境变量 `GITHUB_TOKEN` 读取，不入库；支持 `--dry-run`（不发网络请求，打印将创建的 issue 正文与 latest.json 内容） |
+
+三者对应关系：issue 标题携带版本号 → issue 下唯一一条发布评论承载发布说明 → `latest.json` 用 `issueNumber` + `commentId` 指回它们，控制台据此渲染「关于 / 更新」卡片。
+
+### `GET /api/admin/update-status`（管理员密码会话或 sudo 会话）
+
+- 远端来源：`https://raw.githubusercontent.com/TanchiPanda/r6t5-drive/main/latest.json`，超时 5s，进程内缓存（成功 5 分钟 / 失败 60 秒）。
+- 成功（HTTP 200）：
+
+```json
+{ "checked": true,
+  "current": { "version": "20261115a", "builtAt": "<ISO>", "serverTime": "<ISO>" },
+  "latest": { "version": "...", "issueNumber": 1, "commentId": 2, "commentUrl": "...",
+              "publishedAt": "...", "upgradeCommand": "docker compose pull && docker compose up -d",
+              "notes": "..." },
+  "hasUpdate": true, "cached": false }
+```
+
+- 远端不可达 / 非 200 / JSON 非法（**仍是 HTTP 200**，不抛 5xx、前端不弹红字错误）：
+
+```json
+{ "checked": false, "reason": "network" | "http_<code>" | "invalid_json",
+  "current": { "version": "...", "builtAt": "...", "serverTime": "..." }, "cached": false }
+```
+
+- `hasUpdate` 判定：远端 `version` 与本地 `VERSION` **字符串不等**即 true（构建号不是语义化版本，不做大小比较）。

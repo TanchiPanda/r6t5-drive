@@ -13,7 +13,7 @@ import {
   strategyReadonly, ApiError, zipInvalid, zipTooLarge,
 } from '../lib/errors.js';
 import { getNodeByPath, insertNode, descendantsOf } from './nodes.js';
-import { quotaForUser } from './quota.js';
+import { quotaForUser, quotaBig } from './quota.js';
 import { recordTraffic } from './traffic.js';
 import { writeAudit } from './audit.js';
 import { resolveStorage } from './bindings.js';
@@ -247,12 +247,13 @@ export async function compress({ user, paths, targetPath, name }) {
 
   // 配额预检（以未压缩总量作为保守上界）
   const quota = quotaForUser(user);
-  const estimate = plan.totalBytes;
-  if (estimate > quota.maxFileSizeBytes) throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: estimate });
-  if (quota.usedBytes + estimate > quota.spaceLimitBytes) {
-    throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: estimate });
+  const qb = quotaBig(quota);
+  const estimate = BigInt(plan.totalBytes);
+  if (estimate > qb.maxFile) throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: estimate.toString() });
+  if (qb.used + estimate > qb.spaceLimit) {
+    throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: estimate.toString() });
   }
-  if (quota.traffic7dUsedBytes + estimate > quota.traffic7dLimitBytes) {
+  if (qb.trafficUsed + estimate > qb.trafficLimit) {
     throw quotaTraffic({ limitBytes: quota.traffic7dLimitBytes, usedBytes: quota.traffic7dUsedBytes });
   }
 
@@ -278,11 +279,12 @@ export async function compress({ user, paths, targetPath, name }) {
     zipBytes = fs.statSync(tmpZip).size;
 
     // 落盘前按真实 zip 字节复核配额
-    if (zipBytes > quota.maxFileSizeBytes) throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: zipBytes });
-    if (quota.usedBytes + zipBytes > quota.spaceLimitBytes) {
+    const zipBytesBig = BigInt(zipBytes);
+    if (zipBytesBig > qb.maxFile) throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: zipBytes });
+    if (qb.used + zipBytesBig > qb.spaceLimit) {
       throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: zipBytes });
     }
-    if (quota.traffic7dUsedBytes + zipBytes > quota.traffic7dLimitBytes) {
+    if (qb.trafficUsed + zipBytesBig > qb.trafficLimit) {
       throw quotaTraffic({ limitBytes: quota.traffic7dLimitBytes, usedBytes: quota.traffic7dUsedBytes });
     }
 
@@ -335,6 +337,7 @@ export async function extract({ user, path: srcPath, targetPath }) {
   const dirNode = ensureDirNodes(email, dirLogical);
 
   const quota = quotaForUser(user);
+  const qb = quotaBig(quota);
   const staging = path.join(TMP_DIR, 'extract', `${Date.now()}-${randomHex()}`);
   fs.mkdirSync(path.join(staging, 'stage'), { recursive: true });
   const tmpZip = path.join(staging, 'source.zip');
@@ -352,12 +355,12 @@ export async function extract({ user, path: srcPath, targetPath }) {
     const entries = reader.readEntries();
 
     // 安全 + 上限校验：任一命中即整体中止，不落任何文件
-    const totalBytes = assertExtractSafe(entries, quota);
+    const totalBytes = BigInt(assertExtractSafe(entries, quota));
 
-    if (totalBytes > Math.max(0, quota.spaceLimitBytes - quota.usedBytes)) {
-      throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: totalBytes });
+    if (totalBytes > qb.spaceLimit - qb.used) {
+      throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: totalBytes.toString() });
     }
-    if (totalBytes > Math.max(0, quota.traffic7dLimitBytes - quota.traffic7dUsedBytes)) {
+    if (totalBytes > qb.trafficLimit - qb.trafficUsed) {
       throw quotaTraffic({ limitBytes: quota.traffic7dLimitBytes, usedBytes: quota.traffic7dUsedBytes });
     }
 
@@ -399,10 +402,10 @@ export async function extract({ user, path: srcPath, targetPath }) {
       if (!getNodeByPath(dirPath)) ensureDirNodes(email, dirPath, dirNode);
     }
 
-    recordTraffic(email, 'upload', totalBytes);
-    writeAudit({ email, action: 'extract', target: srcLogical, bytes: totalBytes });
+    recordTraffic(email, 'upload', totalBytes.toString());
+    writeAudit({ email, action: 'extract', target: srcLogical, bytes: totalBytes.toString() });
 
-    return { extracted: staged.length, skipped, totalBytes };
+    return { extracted: staged.length, skipped, totalBytes: totalBytes.toString() };
   } finally {
     if (reader) reader.close();
     fs.rmSync(staging, { recursive: true, force: true });

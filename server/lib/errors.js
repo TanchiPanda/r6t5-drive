@@ -22,6 +22,16 @@ export const supabaseUnreachable = (reason, details) =>
 // ---- P6 账号来源 / 本地账号 ----
 export const accountBanned = (details) =>
   new ApiError(403, 'account_banned', '账号已被封禁，请联系管理员', details || {});
+
+// ---- P7 自助注册 ----
+export const signupClosed = (details) =>
+  new ApiError(403, 'signup_closed', '当前未开放自助注册', details || {});
+export const quotaLimitExceeded = (details) =>
+  new ApiError(400, 'invalid_input', '超出 SQLite INTEGER 上限（约 8 EB）', details || {});
+export const invalidSignup = (details) =>
+  new ApiError(400, 'invalid_signup', '注册信息无效', details || {});
+export const signupRateLimited = (details) =>
+  new ApiError(429, 'rate_limited', '注册尝试过多，请稍后再试', details || {});
 export const notSupportedInSource = (message, details) =>
   new ApiError(409, 'not_supported_in_source', message || '当前账号来源不支持该操作', details || {});
 export const notImplemented = (message = '该能力在 P2 规划中') =>

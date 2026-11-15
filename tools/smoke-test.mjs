@@ -460,6 +460,150 @@ function check(name, cond, detail) {
     `status=${srcBack.status} userSource=${srcBack.json?.userSource}`);
 }
 
+// ================= P7：自助注册 / sudo / 空间单位 / 版本发布（独立段落，收尾切回 supabase） =================
+// 与 56 段同套路：开头切 volume、结尾切回 supabase，保证脚本可重复跑；
+// 独立 jar.p7 / jar.p7sudo 与随机后缀邮箱，避免与 56 段及既有用例冲突。
+{
+  const jarOf = (set) => Object.entries(set).map(([k, v]) => `${k}=${v}`).join('; ');
+  const suffix = Date.now().toString(36);
+  const P7_EMAIL = `p7smoke+${suffix}@x.com`;
+  const P7_PW = 'p7pass123';
+
+  // 57a. 切到 volume
+  const sw = await req('PUT', '/api/admin/user-source', {
+    cookie: jar.admin, body: { source: 'volume', confirm: true },
+  });
+  check('57a1. 切到 volume 200 ok:true', sw.status === 200 && sw.json?.ok === true && sw.json?.switchedTo === 'volume',
+    `status=${sw.status} body=${JSON.stringify(sw.json)}`);
+
+  // 57b. 建一个 allowSelfSignup:true 的组
+  const grp = await req('POST', '/api/admin/groups', {
+    cookie: jar.admin,
+    body: {
+      name: `P7 Smoke ${suffix}`, allowSelfSignup: true,
+      spaceLimitBytes: 10737418240, maxFileSizeBytes: 2147483648, traffic7dLimitBytes: 5368709120,
+    },
+  });
+  const p7Group = grp.json?.item;
+  check('57b1. 建组 allowSelfSignup:true 201', grp.status === 201 && p7Group?.allowSelfSignup === true,
+    `status=${grp.status} item=${JSON.stringify(p7Group)}`);
+
+  // 57c. signup-config：开放注册
+  const cfg = await req('GET', '/api/auth/signup-config');
+  check('57c. signup-config available:true source:volume reason:ok',
+    cfg.status === 200 && cfg.json?.available === true && cfg.json?.source === 'volume' && cfg.json?.reason === 'ok',
+    `body=${JSON.stringify(cfg.json)}`);
+
+  // 57d. 注册成功 201 → /api/me 200
+  const su = await req('POST', '/api/auth/signup', {
+    body: { email: P7_EMAIL, password: P7_PW, passwordConfirm: P7_PW },
+  });
+  jar.p7 = jarOf(su.set);
+  check('57d1. 注册成功 201 ok:true', su.status === 201 && su.json?.ok === true,
+    `status=${su.status} code=${su.json?.error?.code} msg=${su.json?.error?.message}`);
+  const me = await req('GET', '/api/me', { cookie: jar.p7 });
+  check('57d2. 注册后 /api/me 200', me.status === 200 && me.json?.user?.email === P7_EMAIL,
+    `status=${me.status} email=${me.json?.user?.email}`);
+
+  // 57e. 两次密码不一致 → 400，details.field=passwordConfirm
+  const mismatch = await req('POST', '/api/auth/signup', {
+    body: { email: `p7mm+${suffix}@x.com`, password: P7_PW, passwordConfirm: 'other456' },
+  });
+  check('57e. 两次密码不一致 400 invalid_input field=passwordConfirm',
+    mismatch.status === 400 && mismatch.json?.error?.code === 'invalid_input' &&
+    mismatch.json?.error?.details?.field === 'passwordConfirm',
+    `status=${mismatch.status} code=${mismatch.json?.error?.code} field=${mismatch.json?.error?.details?.field} msg=${mismatch.json?.error?.message}`);
+
+  // 57f. 重复邮箱 → 400 invalid_signup，message 逐字等于「注册信息无效」
+  const dup = await req('POST', '/api/auth/signup', {
+    body: { email: P7_EMAIL, password: P7_PW, passwordConfirm: P7_PW },
+  });
+  const dupMsg = dup.json?.error?.message || '';
+  check('57f. 重复邮箱 400 invalid_signup message=「注册信息无效」',
+    dup.status === 400 && dup.json?.error?.code === 'invalid_signup' && dupMsg === '注册信息无效',
+    `status=${dup.status} code=${dup.json?.error?.code} msg=${dupMsg}`);
+
+  // 57g. 关掉该组再注册 → 403 signup_closed
+  await req('PATCH', `/api/admin/groups/${p7Group.id}`, { cookie: jar.admin, body: { allowSelfSignup: false } });
+  const closed = await req('POST', '/api/auth/signup', {
+    body: { email: `p7closed+${suffix}@x.com`, password: P7_PW, passwordConfirm: P7_PW },
+  });
+  check('57g. 组关闭后注册 403 signup_closed',
+    closed.status === 403 && closed.json?.error?.code === 'signup_closed',
+    `status=${closed.status} code=${closed.json?.error?.code} msg=${closed.json?.error?.message}`);
+
+  // 57h. sudo：组设 isSudo:true → 成员登录 → /api/admin/overview 200、session via:sudo
+  await req('PATCH', `/api/admin/groups/${p7Group.id}`, { cookie: jar.admin, body: { isSudo: true } });
+  const sudoLogin = await req('POST', '/api/auth/login', { body: { email: P7_EMAIL, password: P7_PW } });
+  jar.p7sudo = jarOf(sudoLogin.set);
+  check('57h0. sudo 成员密码登录 200', sudoLogin.status === 200 && sudoLogin.json?.ok === true,
+    `status=${sudoLogin.status} email=${sudoLogin.json?.user?.email}`);
+  const ov = await req('GET', '/api/admin/overview', { cookie: jar.p7sudo });
+  check('57h1. sudo 用户 /api/admin/overview 200', ov.status === 200,
+    `status=${ov.status} code=${ov.json?.error?.code}`);
+  const sess = await req('GET', '/api/admin/session', { cookie: jar.p7sudo });
+  check('57h2. /api/admin/session 返回 via:sudo',
+    sess.status === 200 && sess.json?.admin?.via === 'sudo' && sess.json?.admin?.email === P7_EMAIL,
+    `body=${JSON.stringify(sess.json)}`);
+
+  // 57i. 改回 isSudo:false → 同一 cookie 立即 403；重新登录的普通用户也 403
+  await req('PATCH', `/api/admin/groups/${p7Group.id}`, { cookie: jar.admin, body: { isSudo: false } });
+  const ov2 = await req('GET', '/api/admin/overview', { cookie: jar.p7sudo });
+  check('57i1. 移出 sudo 后同一 cookie 立即 403', ov2.status === 403,
+    `status=${ov2.status} code=${ov2.json?.error?.code}`);
+  const relog = await req('POST', '/api/auth/login', { body: { email: P7_EMAIL, password: P7_PW } });
+  const jarP7Normal = jarOf(relog.set);
+  const ov3 = await req('GET', '/api/admin/overview', { cookie: jarP7Normal });
+  check('57i2. 普通组用户登录后 /api/admin/overview 403 forbidden',
+    ov3.status === 403 && ov3.json?.error?.code === 'forbidden',
+    `status=${ov3.status} code=${ov3.json?.error?.code}`);
+
+  // 57j. 单位：spaceLimit {1.5, TB} → 十进制字符串 + text 含 TB
+  const unit = await req('POST', '/api/admin/groups', {
+    cookie: jar.admin,
+    body: {
+      name: `P7 Unit ${suffix}`,
+      spaceLimit: { value: '1.5', unit: 'TB' },
+      maxFileSizeBytes: 2147483648, traffic7dLimitBytes: 5368709120,
+    },
+  });
+  const unitItem = unit.json?.item;
+  check('57j1. 1.5 TB → spaceLimitBytes=1649267441664 且 spaceLimitText 含 TB',
+    unit.status === 201 && unitItem?.spaceLimitBytes === '1649267441664' && /TB/.test(unitItem?.spaceLimitText || ''),
+    `bytes=${unitItem?.spaceLimitBytes} text=${unitItem?.spaceLimitText}`);
+
+  // 57k. 16 EB（=2^64）超 SQLite 上限 → 400 invalid_input，details.max 存在
+  const over = await req('PATCH', `/api/admin/groups/${unitItem?.id}`, {
+    cookie: jar.admin, body: { maxFileSize: { value: '16', unit: 'EB' } },
+  });
+  check('57k. 16 EB 超上限 400 invalid_input 且 details.max 存在',
+    over.status === 400 && over.json?.error?.code === 'invalid_input' && !!over.json?.error?.details?.max,
+    `status=${over.status} code=${over.json?.error?.code} details=${JSON.stringify(over.json?.error?.details)}`);
+
+  // 57l. 版本发布检查：200 且非 5xx；current.version 非空字符串；checked:true 时再断言 latest/hasUpdate
+  const upd = await req('GET', '/api/admin/update-status', { cookie: jar.admin });
+  const updChecked = upd.json?.checked;
+  const updReason = upd.json?.reason;
+  const updVersion = upd.json?.current?.version;
+  let updOk = upd.status === 200 && upd.status < 500 && typeof updVersion === 'string' && updVersion !== '';
+  if (updChecked === true) {
+    updOk = updOk && typeof upd.json?.hasUpdate === 'boolean' && !!upd.json?.latest?.upgradeCommand;
+  }
+  check('57l. update-status 200 非 5xx，current.version 非空字符串', updOk,
+    `checked=${updChecked} reason=${updReason} version=${updVersion} hasUpdate=${upd.json?.hasUpdate} upgradeCommand=${upd.json?.latest?.upgradeCommand || ''}`);
+
+  // 57m. 收尾切回 supabase，断言来源复位（保证脚本可重复跑）
+  const swBack = await req('PUT', '/api/admin/user-source', {
+    cookie: jar.admin, body: { source: 'supabase', confirm: true },
+  });
+  check('57m1. 切回 supabase 200', swBack.status === 200 && swBack.json?.switchedTo === 'supabase',
+    `status=${swBack.status} body=${JSON.stringify(swBack.json)}`);
+  const srcBack = await req('GET', '/api/admin/user-source', { cookie: jar.admin });
+  check('57m2. GET /api/admin/user-source 回到 supabase',
+    srcBack.status === 200 && srcBack.json?.userSource === 'supabase',
+    `status=${srcBack.status} userSource=${srcBack.json?.userSource}`);
+}
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n汇总：${results.length - failed.length}/${results.length} 通过`);
 process.exit(failed.length ? 1 : 0);

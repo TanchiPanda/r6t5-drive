@@ -18,7 +18,7 @@ import {
 import {
   getNodeByPath, insertNode, listChildren, softDeleteRecursive,
 } from '../services/nodes.js';
-import { quotaForUser } from '../services/quota.js';
+import { quotaForUser, quotaBig } from '../services/quota.js';
 import { recordTraffic } from '../services/traffic.js';
 import { writeAudit } from '../services/audit.js';
 import { resolveStorage } from '../services/bindings.js';
@@ -281,12 +281,14 @@ router.put('/*', async (req, res, next) => {
 
     // 配额三连（覆盖前先校验：覆盖扣减的是旧文件大小，这里按新增保守判断）
     const quota = quotaForUser(req.user);
+    const qb = quotaBig(quota);
     const existing = getNodeByPath(logical);
-    const oldSize = existing && !existing.isDir ? Number(existing.sizeBytes) : 0;
-    const delta = Math.max(0, size - oldSize);
-    if (size > quota.maxFileSizeBytes) { cleanup(); throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: size }); }
-    if (quota.usedBytes + delta > quota.spaceLimitBytes) { cleanup(); throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: size }); }
-    if (quota.traffic7dUsedBytes + size > quota.traffic7dLimitBytes) { cleanup(); throw quotaTraffic({ limitBytes: quota.traffic7dLimitBytes, usedBytes: quota.traffic7dUsedBytes }); }
+    const sizeBig = BigInt(size);
+    const oldSize = existing && !existing.isDir ? BigInt(existing.sizeBytes || 0) : 0n;
+    const delta = sizeBig > oldSize ? sizeBig - oldSize : 0n;
+    if (sizeBig > qb.maxFile) { cleanup(); throw quotaFile({ limitBytes: quota.maxFileSizeBytes, sizeBytes: size }); }
+    if (qb.used + delta > qb.spaceLimit) { cleanup(); throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: size }); }
+    if (qb.trafficUsed + sizeBig > qb.trafficLimit) { cleanup(); throw quotaTraffic({ limitBytes: quota.traffic7dLimitBytes, usedBytes: quota.traffic7dUsedBytes }); }
 
     if (existing?.isDir) { cleanup(); throw conflict('同名目录已存在', { path: logical }); }
 
@@ -300,12 +302,12 @@ router.put('/*', async (req, res, next) => {
 
     if (existing) {
       db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, storageId = ?, updatedAt = ? WHERE id = ?')
-        .run(size, mime, hit.strategy.id, nowIso(), existing.id);
+        .run(String(size), mime, hit.strategy.id, nowIso(), existing.id);
     } else {
-      insertNode({ email, parentId: parent.id, name: fileName, path: logical, isDir: false, sizeBytes: size, mime, storageId: hit.strategy.id });
+      insertNode({ email, parentId: parent.id, name: fileName, path: logical, isDir: false, sizeBytes: String(size), mime, storageId: hit.strategy.id });
     }
-    recordTraffic(email, 'upload', size);
-    writeAudit({ email, action: 'upload', target: logical, bytes: size, ip: clientIp(req), detail: JSON.stringify({ via: 'webdav' }) });
+    recordTraffic(email, 'upload', String(size));
+    writeAudit({ email, action: 'upload', target: logical, bytes: String(size), ip: clientIp(req), detail: JSON.stringify({ via: 'webdav' }) });
 
     res.status(existing ? 204 : 201).end();
   } catch (e) { cleanup(); next(e); }
