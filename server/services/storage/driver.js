@@ -5,6 +5,12 @@ import { ENV } from '../../config.js';
 import * as volumeImpl from './volume.js';
 import { s3Driver } from './s3.js';
 import { githubDriver } from './github.js';
+import { ossDriver } from './oss.js';
+import { cosDriver } from './cos.js';
+import { ks3Driver } from './ks3.js';
+import { obsDriver } from './obs.js';
+import { qiniuDriver } from './qiniu.js';
+import { upyunDriver } from './upyun.js';
 
 const volumeDriver = {
   type: 'volume',
@@ -46,7 +52,17 @@ function strategicParse(s) {
   try { return s ? JSON.parse(s) : {}; } catch { return {}; }
 }
 
-const DRIVERS = { volume: volumeDriver, s3: s3Driver, github: githubDriver };
+const DRIVERS = {
+  volume: volumeDriver,
+  s3: s3Driver,
+  github: githubDriver,
+  oss: ossDriver,
+  cos: cosDriver,
+  ks3: ks3Driver,
+  obs: obsDriver,
+  qiniu: qiniuDriver,
+  upyun: upyunDriver,
+};
 
 export function getDriver(type) {
   const d = DRIVERS[type];

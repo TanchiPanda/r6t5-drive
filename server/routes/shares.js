@@ -3,10 +3,13 @@
 //  - 公开端（免登录）：挂在 /api/share
 // 注意：本文件同时导出两个 Router。
 import { Router } from 'express';
-import { ApiError, badRequest, forbidden, storageError, shareCodeRequired, unauthorized } from '../lib/errors.js';
+import { db } from '../db.js';
+import { readUserSession } from '../lib/session.js';
+import { ApiError, badRequest, forbidden, storageError, shareCodeRequired, unauthorized, shareNotPaid } from '../lib/errors.js';
 import { getDriver } from '../services/storage/driver.js';
 import { getStrategy as getStrategyById } from '../services/storage/registry.js';
 import { sendPreview } from '../services/preview.js';
+import { shareRequiresPayment, hasPurchased } from '../services/store.js';
 import { requireConfirmed } from '../middleware/auth.js';
 import {
   createShare, listMyShares, getMyShare, revokeMyShare,
@@ -16,6 +19,18 @@ import {
 
 function clientIp(req) {
   return req.ip || req.socket?.remoteAddress || '';
+}
+
+function sessionEmail(req) {
+  const s = readUserSession(req, db);
+  return s?.email ? String(s.email).toLowerCase() : null;
+}
+
+/** 付费分享：未购买者访问下载/预览 → 402 share_not_paid。 */
+function assertPaid(row, req) {
+  if (!shareRequiresPayment(row)) return;
+  const email = sessionEmail(req);
+  if (!hasPurchased(row, { email, recoverToken: req.query.recover || null })) throw shareNotPaid();
 }
 
 // ============ 用户端（requireUser 由挂载处加） ============
@@ -89,6 +104,7 @@ publicRouter.get('/:token/list', async (req, res, next) => {
 publicRouter.get('/:token/download', async (req, res, next) => {
   try {
     const row = loadActiveShare(req.params.token);
+    assertPaid(row, req);
     if (!isUnlocked(req, row)) throw shareCodeRequired();
     const { logical, node, hit } = resolveShareFile(row, req.query.path);
     if (node && node.isDir) throw badRequest('invalid_input', '不能下载目录', { field: 'path' });
@@ -127,6 +143,7 @@ publicRouter.get('/:token/preview', async (req, res, next) => {
   try {
     const row = loadActiveShare(req.params.token);
     if (!row.allowPreview) throw forbidden('该分享未开启在线预览');
+    assertPaid(row, req);
     if (!isUnlocked(req, row)) throw shareCodeRequired();
     const { logical, node, hit } = resolveShareFile(row, req.query.path);
     if (!hit || !hit.strategy) {

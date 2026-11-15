@@ -1,7 +1,7 @@
 import { db } from '../../db.js';
 import { nowIso, genId } from '../../lib/format.js';
 
-export const PLANNED_TYPES = ['s3', 'github'];
+export const PLANNED_TYPES = ['s3', 'github', 'oss', 'cos', 'ks3', 'obs', 'qiniu', 'upyun'];
 
 export function listStrategies() {
   return db.prepare('SELECT * FROM storage_strategies ORDER BY createdAt ASC').all();

@@ -16,13 +16,106 @@ const PUBLIC_FIELDS = [
   { key: 'readOnly', label: '是否只读' },
 ];
 
-const TYPES = ['volume', 's3', 'github'];
+const TYPES = ['volume', 's3', 'github', 'oss', 'cos', 'ks3', 'obs', 'qiniu', 'upyun'];
 
 // 各类型的密钥字段（PATCH 时前端回传 `****` 开头占位串视为「不修改」）
 const SECRET_KEYS = {
   volume: [],
   s3: ['accessKeyId', 'secretAccessKey'],
   github: ['token'],
+  oss: ['accessKeyId', 'secretAccessKey'],
+  cos: ['accessKeyId', 'secretAccessKey'],
+  ks3: ['accessKeyId', 'secretAccessKey'],
+  obs: ['accessKeyId', 'secretAccessKey'],
+  qiniu: ['accessKey', 'secretKey'],
+  upyun: ['operator', 'password'],
+};
+
+// P9-D1 新增厂商适配器的配置规格：required 必填、secretKeys 脱敏、fields 给 /types 弹窗
+const VENDOR_SPECS = {
+  oss: {
+    label: '阿里云 OSS',
+    required: ['region', 'bucket', 'accessKeyId', 'secretAccessKey'],
+    caps: { read: true, write: true, list: true },
+    fields: [
+      { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false, placeholder: 'https://<bucket>.<region>.aliyuncs.com' },
+      { key: 'region', label: 'Region', type: 'text', required: true, placeholder: 'oss-cn-hangzhou' },
+      { key: 'bucket', label: 'Bucket', type: 'text', required: true },
+      { key: 'accessKeyId', label: 'AccessKey ID', type: 'text', required: true, secret: true },
+      { key: 'secretAccessKey', label: 'AccessKey Secret', type: 'password', required: true, secret: true },
+      { key: 'prefix', label: '对象前缀', type: 'text', required: false, placeholder: 'r6t5-drive' },
+    ],
+    docsHint: 'SigV4 变体；头前缀 x-oss-，时间戳 x-oss-date。真实 OSS 服务未联调验证。',
+  },
+  cos: {
+    label: '腾讯云 COS',
+    required: ['region', 'bucket', 'appid', 'accessKeyId', 'secretAccessKey'],
+    caps: { read: true, write: true, list: true },
+    fields: [
+      { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false },
+      { key: 'region', label: 'Region', type: 'text', required: true, placeholder: 'ap-guangzhou' },
+      { key: 'bucket', label: 'Bucket', type: 'text', required: true },
+      { key: 'appid', label: 'APPID', type: 'text', required: true, help: 'Host 形态 <bucket>-<appid>.cos.<region>.myqcloud.com' },
+      { key: 'accessKeyId', label: 'SecretId', type: 'text', required: true, secret: true },
+      { key: 'secretAccessKey', label: 'SecretKey', type: 'password', required: true, secret: true },
+      { key: 'prefix', label: '对象前缀', type: 'text', required: false, placeholder: 'r6t5-drive' },
+    ],
+    docsHint: 'SigV4 近似 S3，scope service=cos；Host 带 APPID 后缀。真实 COS 服务未联调验证。',
+  },
+  ks3: {
+    label: '金山云 KS3',
+    required: ['region', 'bucket', 'accessKeyId', 'secretAccessKey'],
+    caps: { read: true, write: true, list: true },
+    fields: [
+      { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false },
+      { key: 'region', label: 'Region', type: 'text', required: true, placeholder: 'ks3-cn-beijing' },
+      { key: 'bucket', label: 'Bucket', type: 'text', required: true },
+      { key: 'accessKeyId', label: 'Access Key', type: 'text', required: true, secret: true },
+      { key: 'secretAccessKey', label: 'Secret Key', type: 'password', required: true, secret: true },
+      { key: 'prefix', label: '对象前缀', type: 'text', required: false, placeholder: 'r6t5-drive' },
+    ],
+    docsHint: 'SigV4 变体；Authorization 方案 KSS，时间戳 x-kss-date。真实 KS3 服务未联调验证。',
+  },
+  obs: {
+    label: '华为云 OBS',
+    required: ['region', 'bucket', 'accessKeyId', 'secretAccessKey'],
+    caps: { read: true, write: true, list: true },
+    fields: [
+      { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false },
+      { key: 'region', label: 'Region', type: 'text', required: true, placeholder: 'cn-north-4' },
+      { key: 'bucket', label: 'Bucket', type: 'text', required: true },
+      { key: 'accessKeyId', label: 'Access Key', type: 'text', required: true, secret: true },
+      { key: 'secretAccessKey', label: 'Secret Key', type: 'password', required: true, secret: true },
+      { key: 'prefix', label: '对象前缀', type: 'text', required: false, placeholder: 'r6t5-drive' },
+    ],
+    docsHint: 'SigV4 兼容；Host <bucket>.obs.<region>.myhuaweicloud.com。真实 OBS 服务未联调验证。',
+  },
+  qiniu: {
+    label: '七牛云 Qiniu',
+    required: ['bucket', 'accessKey', 'secretKey'],
+    caps: { read: true, write: false, list: false },
+    fields: [
+      { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false, placeholder: 'https://rs.qiniu.com' },
+      { key: 'bucket', label: 'Bucket', type: 'text', required: true },
+      { key: 'accessKey', label: 'Access Key', type: 'text', required: true, secret: true },
+      { key: 'secretKey', label: 'Secret Key', type: 'password', required: true, secret: true },
+      { key: 'prefix', label: '对象前缀', type: 'text', required: false, placeholder: 'r6t5-drive' },
+    ],
+    docsHint: 'QBox 管理凭证（HMAC-SHA1，非 SigV4）；未实现表单直传，写入返回 upload_not_supported。真实七牛服务未联调验证。',
+  },
+  upyun: {
+    label: '又拍云 UPYUN',
+    required: ['bucket', 'operator', 'password'],
+    caps: { read: true, write: false, list: false },
+    fields: [
+      { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false, placeholder: 'https://v0.api.upyun.com' },
+      { key: 'bucket', label: 'Bucket（服务名）', type: 'text', required: true },
+      { key: 'operator', label: '操作员', type: 'text', required: true, secret: true },
+      { key: 'password', label: '操作员密码', type: 'password', required: true, secret: true },
+      { key: 'prefix', label: '对象前缀', type: 'text', required: false, placeholder: 'r6t5-drive' },
+    ],
+    docsHint: 'UPYUN v2 签名（MD5 拼接，非 SigV4）；未实现表单直传，写入返回 upload_not_supported。真实又拍服务未联调验证。',
+  },
 };
 
 const TYPE_REGISTRY = {
@@ -85,6 +178,21 @@ const TYPE_REGISTRY = {
   },
 };
 
+// P9-D1：由 VENDOR_SPECS 生成 /types 注册表条目（OSS/COS/KS3/OBS/七牛/又拍）
+for (const [type, spec] of Object.entries(VENDOR_SPECS)) {
+  TYPE_REGISTRY[type] = {
+    type,
+    label: spec.label,
+    status: 'ready',
+    capabilities: { ...spec.caps },
+    publicFields: PUBLIC_FIELDS,
+    neverPublic: spec.fields.filter((f) => f.secret).map((f) => ({ key: `config.${f.key}`, label: f.label })),
+    fields: spec.fields,
+    notice: '创建后，普通用户只会看到策略名、类型、区域、容量与是否只读；密钥类字段仅存服务端，永不下发。',
+    docsHint: spec.docsHint,
+  };
+}
+
 router.get('/types', (req, res) => {
   res.json({ items: TYPES.map((t) => TYPE_REGISTRY[t]) });
 });
@@ -92,6 +200,15 @@ router.get('/types', (req, res) => {
 function parseConfig(raw) {
   if (!raw || typeof raw !== 'object') return {};
   return raw;
+}
+
+function normalizeVendorConfig(spec, cfg) {
+  const out = {};
+  for (const f of spec.fields) {
+    const v = cfg[f.key];
+    out[f.key] = typeof v === 'string' ? v.trim() : (v == null ? '' : v);
+  }
+  return out;
 }
 
 function normalizeConfig(type, cfg) {
@@ -110,13 +227,17 @@ function normalizeConfig(type, cfg) {
       pathStyle: ['auto', 'on', 'off'].includes(cfg.pathStyle) ? cfg.pathStyle : 'auto',
     };
   }
-  // github
-  return {
-    repo: String(cfg.repo || '').trim(),
-    branch: String(cfg.branch || 'main').trim() || 'main',
-    rootPath: String(cfg.rootPath || '').trim(),
-    token: String(cfg.token || ''),
-  };
+  if (type === 'github') {
+    return {
+      repo: String(cfg.repo || '').trim(),
+      branch: String(cfg.branch || 'main').trim() || 'main',
+      rootPath: String(cfg.rootPath || '').trim(),
+      token: String(cfg.token || ''),
+    };
+  }
+  const spec = VENDOR_SPECS[type];
+  if (spec) return normalizeVendorConfig(spec, cfg);
+  return {};
 }
 
 function validateRequired(type, cfg) {
@@ -125,7 +246,9 @@ function validateRequired(type, cfg) {
     s3: ['endpoint', 'bucket', 'accessKeyId', 'secretAccessKey'],
     github: ['repo'],
   }[type];
-  for (const field of required) {
+  const spec = VENDOR_SPECS[type];
+  const fields = required || (spec ? spec.required : []);
+  for (const field of fields) {
     if (cfg[field] == null || String(cfg[field]).trim() === '') {
       throw badRequest('invalid_input', `缺少必填字段 ${field}`, { field });
     }
@@ -135,6 +258,8 @@ function validateRequired(type, cfg) {
 function defaultRegion(type, cfg) {
   if (type === 's3') return `${cfg.region} · ${cfg.bucket}`;
   if (type === 'github') return `${cfg.repo}@${cfg.branch}`;
+  const spec = VENDOR_SPECS[type];
+  if (spec) return cfg.region ? `${cfg.region} · ${cfg.bucket}` : cfg.bucket;
   return '本机 data/volume';
 }
 
@@ -154,12 +279,22 @@ function maskConfig(type, cfg) {
       accessKeyId: cfg.accessKeyId ? maskSecret(cfg.accessKeyId) : null,
     };
   }
-  return {
-    repo: cfg.repo || '',
-    branch: cfg.branch || 'main',
-    rootPath: cfg.rootPath || '',
-    token: cfg.token ? maskSecret(cfg.token) : null,
-  };
+  if (type === 'github') {
+    return {
+      repo: cfg.repo || '',
+      branch: cfg.branch || 'main',
+      rootPath: cfg.rootPath || '',
+      token: cfg.token ? maskSecret(cfg.token) : null,
+    };
+  }
+  const spec = VENDOR_SPECS[type];
+  if (!spec) return {};
+  const out = {};
+  for (const f of spec.fields) {
+    if (f.secret) out[f.key] = cfg[f.key] ? maskSecret(cfg[f.key]) : null;
+    else out[f.key] = cfg[f.key] || '';
+  }
+  return out;
 }
 
 function readHealth(id) {
@@ -227,7 +362,8 @@ router.post('/', (req, res, next) => {
     const config = normalizeConfig(type, body.config);
     validateRequired(type, config);
 
-    const readOnly = type === 'github' ? true : !!body.readOnly;
+    const spec = VENDOR_SPECS[type];
+    const readOnly = (type === 'github' || (spec && spec.caps.write === false)) ? true : !!body.readOnly;
     const region = (typeof body.region === 'string' && body.region.trim()) ? body.region.trim() : defaultRegion(type, config);
 
     const strategy = registry.createStrategy({
@@ -299,7 +435,8 @@ router.patch('/:id', (req, res, next) => {
     for (const k of ['name', 'region', 'capacityBytes', 'readOnly', 'enabled']) {
       if (body[k] != null) fields[k] = body[k];
     }
-    if (s.type === 'github') fields.readOnly = true;
+    const sSpec = VENDOR_SPECS[s.type];
+    if (s.type === 'github' || (sSpec && sSpec.caps.write === false)) fields.readOnly = true;
 
     if (body.config != null && typeof body.config === 'object') {
       let oldConfig = {};

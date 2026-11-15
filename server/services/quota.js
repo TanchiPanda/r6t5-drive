@@ -1,6 +1,7 @@
 import { db } from '../db.js';
 import { trafficUsed7d } from './traffic.js';
 import { toBigInt, toByteString, formatSize } from '../lib/bytes.js';
+import { nowIso } from '../lib/format.js';
 
 // 无组时默认值（BigInt 常量，1024 进制）：10 GiB 空间 / 2 GiB 单文件 / 5 GiB 流量
 const DEFAULT_SPACE_LIMIT = 10n * 1024n * 1024n * 1024n;
@@ -26,6 +27,21 @@ export function getGroupById(id) {
 
 export function resolveGroup(user) {
   return getGroupById(user?.groupId) || getDefaultGroup();
+}
+
+/**
+ * 未过期容量加成之和（BigInt）。expiresAt 为 null = 永久；否则只算尚未到期的 grant。
+ * 字节列存十进制字符串，读取后 CAST TEXT，全程 BigInt 累加。
+ */
+export function grantBytes(email) {
+  const now = nowIso();
+  const rows = db.prepare(
+    `SELECT CAST(bytes AS TEXT) AS b FROM storage_grants
+      WHERE email = ? AND (expiresAt IS NULL OR expiresAt > ?)`
+  ).all(String(email).toLowerCase(), now);
+  let sum = 0n;
+  for (const r of rows) sum += toBigInt(r.b || 0);
+  return sum;
 }
 
 /** 已用空间（BigInt 汇总；节点 sizeBytes 是 INTEGER 列）。 */
@@ -56,7 +72,8 @@ export function trashCount(email) {
  */
 export function quotaForUser(user) {
   const group = resolveGroup(user) || {};
-  const spaceLimit = group.spaceLimitBytes != null ? toBigInt(group.spaceLimitBytes) : DEFAULT_SPACE_LIMIT;
+  const spaceLimit = (group.spaceLimitBytes != null ? toBigInt(group.spaceLimitBytes) : DEFAULT_SPACE_LIMIT)
+    + grantBytes(user.email);
   const maxFile = group.maxFileSizeBytes != null ? toBigInt(group.maxFileSizeBytes) : DEFAULT_MAX_FILE;
   const trafficLimit = group.traffic7dLimitBytes != null ? toBigInt(group.traffic7dLimitBytes) : DEFAULT_TRAFFIC_LIMIT;
   const used = usedBytes(user.email);

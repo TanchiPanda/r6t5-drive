@@ -98,6 +98,8 @@ function publicItem(row, { includeEmail = false } = {}) {
     maxDownloads: row.maxDownloads == null ? null : Number(row.maxDownloads),
     downloadCount: Number(row.downloadCount || 0),
     allowPreview: !!row.allowPreview,
+    paidDownload: !!row.paidDownload,
+    pricePoints: row.pricePoints == null ? null : Number(row.pricePoints),
     hasCode: !!row.codeHash,
     createdAt: row.createdAt,
     status,
@@ -158,16 +160,31 @@ export function createShare(user, body) {
 
   const allowPreview = body?.allowPreview == null ? true : !!body.allowPreview;
 
+  // P9-C 付费分享：paidDownload=1 时必须有正积分价
+  const paidDownload = body?.paidDownload ? 1 : 0;
+  let pricePoints = null;
+  if (body?.pricePoints != null && body.pricePoints !== '') {
+    const p = toInt(body.pricePoints, NaN);
+    if (!Number.isFinite(p) || p < 0) {
+      throw badRequest('invalid_input', '积分价需为非负整数', { field: 'pricePoints' });
+    }
+    pricePoints = p;
+  }
+  if (paidDownload && (!pricePoints || pricePoints <= 0)) {
+    throw badRequest('invalid_input', '付费分享必须填写正积分价', { field: 'pricePoints' });
+  }
+
   const token = uniqueToken();
   const id = genId('sh');
   const createdAt = nowIso();
   db.prepare(
     `INSERT INTO shares
-      (id, token, email, path, name, isDir, codeHash, codeSalt, expiresAt, maxDownloads, downloadCount, allowPreview, revokedAt, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?)`
+      (id, token, email, path, name, isDir, codeHash, codeSalt, expiresAt, maxDownloads, downloadCount, allowPreview, paidDownload, pricePoints, revokedAt, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, NULL, ?)`
   ).run(
     id, token, email, logical, node.name, node.isDir ? 1 : 0,
-    codeHash, codeSalt, expiresAt, maxDownloads, allowPreview ? 1 : 0, createdAt,
+    codeHash, codeSalt, expiresAt, maxDownloads, allowPreview ? 1 : 0,
+    paidDownload, pricePoints, createdAt,
   );
 
   writeAudit({ email, action: 'share_create', target: logical, detail: `share:${token}` });
@@ -240,6 +257,8 @@ export function publicMeta(row) {
     name: row.name,
     isDir: !!row.isDir,
     allowPreview: !!row.allowPreview,
+    paidDownload: !!row.paidDownload,
+    pricePoints: row.pricePoints == null ? null : Number(row.pricePoints),
     hasCode: !!row.codeHash,
     expiresAt: row.expiresAt || null,
     maxDownloads: row.maxDownloads == null ? null : max,

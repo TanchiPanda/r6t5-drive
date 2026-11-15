@@ -58,6 +58,58 @@ export const upstreamError = (provider, message, details) =>
 export const storageUnsupported = (message = '该存储策略不支持此操作', details) =>
   new ApiError(400, 'storage_unsupported', message, details);
 
+// ---- P9-D1 存储策略补齐：能力矩阵显式报错（绝不静默降级）----
+export const driverNotSupported = (capability, details) =>
+  new ApiError(400, 'driver_not_supported', `该存储适配器不支持「${capability}」操作`, { capability, ...(details || {}) });
+export const uploadNotSupported = (driverName, details) =>
+  new ApiError(400, 'upload_not_supported', `「${driverName}」适配器未实现上传通道（表单直传需客户端签名策略），拒绝写入`, { driver: driverName, ...(details || {}) });
+
+// ---- P9-D1 OAuth 应用 / 客户端凭据 ----
+export const oauthInvalidClient = (message = '客户端凭据无效', details) =>
+  new ApiError(401, 'oauth_invalid_client', message, details);
+export const oauthInvalidGrant = (message = '授权码或刷新令牌无效 / 已过期', details) =>
+  new ApiError(400, 'oauth_invalid_grant', message, details);
+export const oauthUnsupportedGrant = (details) =>
+  new ApiError(400, 'oauth_unsupported_grant_type', '仅支持 authorization_code 与 refresh_token', details || {});
+export const oauthScopeDenied = (details) =>
+  new ApiError(400, 'oauth_scope_denied', '请求的 scope 超出应用被授权范围', details || {});
+export const bearerInvalid = (message = '访问令牌无效或已撤销') =>
+  new ApiError(401, 'bearer_invalid', message, {});
+
+// ---- P9-C 积分 / 商店 / 兑换码 / 付费分享 ----
+export const insufficientPoints = (details) =>
+  new ApiError(400, 'insufficient_points', '积分不足', details || {});
+export const pointsDisabled = (details) =>
+  new ApiError(400, 'points_disabled', '该商品不支持积分支付', details || {});
+export const productDisabled = (details) =>
+  new ApiError(400, 'product_disabled', '商品不存在或已下架', details || {});
+export const orderNotPending = (details) =>
+  new ApiError(409, 'order_not_pending', '订单状态不允许该操作', details || {});
+export const orderAlreadyPaid = (details) =>
+  new ApiError(409, 'order_already_paid', '订单已支付', details || {});
+export const orderNotFound = (details) =>
+  new ApiError(404, 'order_not_found', '订单不存在或凭证不匹配', details || {});
+export const redeemCodeInvalid = (details) =>
+  new ApiError(400, 'redeem_code_invalid', '兑换码不存在或已删除', details || {});
+export const redeemCodeDisabled = (details) =>
+  new ApiError(400, 'redeem_code_disabled', '兑换码已被禁用', details || {});
+export const redeemCodeExpired = (details) =>
+  new ApiError(400, 'redeem_code_expired', '兑换码已过期', details || {});
+export const redeemCodeExhausted = (details) =>
+  new ApiError(400, 'redeem_code_exhausted', '兑换码可用次数已用尽', details || {});
+export const redeemCodeEmailMismatch = (details) =>
+  new ApiError(400, 'redeem_code_email_mismatch', '该兑换码绑定了其他邮箱', details || {});
+export const redeemCodeAlreadyUsed = (details) =>
+  new ApiError(409, 'redeem_code_already_used', '兑换码已被使用', details || {});
+export const shareNotPaid = (details) =>
+  new ApiError(402, 'share_not_paid', '该分享为付费内容，请先购买', details || {});
+export const selfPurchaseForbidden = (details) =>
+  new ApiError(400, 'self_purchase_forbidden', '不能购买自己的分享', details || {});
+export const anonymousPurchaseDisabled = (details) =>
+  new ApiError(400, 'anonymous_purchase_disabled', '当前站点不支持未登录购买', details || {});
+export const paymentNotConfigured = (provider, details = {}) =>
+  new ApiError(501, 'payment_not_configured', `支付渠道 ${provider || ''} 尚未配置`, { provider, ...details });
+
 
 // ---- P3 分享 / 预览 ----
 export const shareNotFound = () => new ApiError(404, 'share_not_found', '分享链接不存在或已被删除');
