@@ -1,0 +1,9 @@
+{
+  "version": "20261115a",
+  "issueNumber": 1,
+  "commentId": 6891880562,
+  "commentUrl": "https://github.com/TanchiPanda/r6t5-drive/issues/1#issuecomment-6891880562",
+  "publishedAt": "2026-11-15T08:45:48.156Z",
+  "upgradeCommand": "docker compose pull && docker compose up -d",
+  "notes": "feat(console-ui): 概览账号来源开关 + 用户抽屉（封禁/改密/删号）+ 边栏 SVG 图标"
+}
