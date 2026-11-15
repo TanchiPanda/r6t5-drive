@@ -52,6 +52,71 @@
       return { value: Math.round((bytes / mb) * 10) / 10, unit: 'MB' };
     },
 
+    /* ---------- 用户组配额：1024 进制，BigInt 解析（不用 Number 乘除，避免丢精度） ---------- */
+    UNIT_LIST: ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'],
+    _unitFactors: null,
+    unitFactors() {
+      if (!Admin._unitFactors) Admin._unitFactors = Admin.UNIT_LIST.map((_, i) => 1024n ** BigInt(i));
+      return Admin._unitFactors;
+    },
+    /* 十进制字节字符串 → { value, unit, bytes }；非法输入返回 null */
+    splitLimit(bytesStr) {
+      let bytes;
+      try { bytes = BigInt(String(bytesStr == null ? '0' : bytesStr).trim()); }
+      catch (_) { return null; }
+      if (bytes < 0n) bytes = 0n;
+      const factors = Admin.unitFactors();
+      if (bytes === 0n) return { value: '0', unit: 'GB', bytes: 0n };
+      let idx = 0;
+      for (let i = factors.length - 1; i >= 0; i--) {
+        if (bytes >= factors[i]) { idx = i; break; }
+      }
+      const factor = factors[idx];
+      const whole = bytes / factor;
+      const rem = bytes % factor;
+      let value;
+      if (rem === 0n) {
+        value = whole.toString();
+      } else {
+        const tenths = Number(rem * 10n / factor);
+        value = String(Math.round((Number(whole) + tenths / 10) * 10) / 10);
+      }
+      return { value, unit: Admin.UNIT_LIST[idx], bytes };
+    },
+    /* 数值 + 单位 → BigInt 字节（支持最多 3 位小数）；非法返回 null */
+    limitToBytes(valueStr, unit) {
+      const factors = Admin.unitFactors();
+      const ui = Admin.UNIT_LIST.indexOf(unit);
+      if (ui < 0) return null;
+      const m = String(valueStr == null ? '' : valueStr).trim().match(/^(\d+)(?:\.(\d{1,3}))?$/);
+      if (!m) return null;
+      const dec = m[2] || '';
+      const scale = 10n ** BigInt(dec.length);
+      const num = BigInt(m[1] + dec.padEnd(dec.length, '0'));
+      return (num * factors[ui]) / scale;
+    },
+    /* 读取表单一组限额；返回 { value, unit, bytes } 或 null */
+    readLimit(vId, uId) {
+      const v = Admin.$('#' + vId).value.trim();
+      const u = Admin.$('#' + uId).value;
+      const bytes = Admin.limitToBytes(v, u);
+      if (bytes == null) return null;
+      return { value: v, unit: u, bytes };
+    },
+    /* 输入右侧预览：= X 字节 / 人类可读；非法输入显示错误提示而不是 NaN */
+    refreshLimitPreview(vId, uId, pvId) {
+      const pv = Admin.$('#' + pvId);
+      if (!pv) return;
+      const bytes = Admin.limitToBytes(Admin.$('#' + vId).value, Admin.$('#' + uId).value);
+      if (bytes == null) {
+        pv.textContent = '请填写不小于 0 的数值';
+        pv.classList.add('is-err');
+        return;
+      }
+      pv.classList.remove('is-err');
+      pv.textContent = '= ' + bytes.toString() + ' 字节 · ' + R6T5.fmtBytes(Number(bytes));
+    },
+
     cssVar(name) {
       return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     },
@@ -85,8 +150,13 @@
         if (id) id.textContent = '未登录';
         return;
       }
-      const src = admin.passwordSource === 'env' ? '环境变量' : '首次启动生成';
-      const txt = '管理员 · ' + src;
+      let txt;
+      if (admin.via === 'sudo') {
+        txt = '管理员 · sudo 组' + (admin.email ? ' · ' + admin.email : '');
+      } else {
+        const src = admin.passwordSource === 'env' ? '环境变量' : '首次启动生成';
+        txt = '管理员 · ' + src;
+      }
       if (chip) chip.innerHTML = '<span class="dot-s"></span>' + R6T5.esc(txt);
       if (id) id.textContent = txt;
     },
@@ -1134,6 +1204,42 @@
     if (add) add.addEventListener('click', () => openGroupModal(null));
     const form = Admin.$('#group-form');
     if (form) form.addEventListener('submit', onGroupSubmit);
+
+    // 三个限额输入的即时字节预览
+    [['g-space', 'g-space-v', 'g-space-u', 'g-space-pv'],
+     ['g-file', 'g-file-v', 'g-file-u', 'g-file-pv'],
+     ['g-traffic', 'g-traffic-v', 'g-traffic-u', 'g-traffic-pv']].forEach(([, vId, uId, pvId]) => {
+      const v = Admin.$('#' + vId), u = Admin.$('#' + uId);
+      if (v) v.addEventListener('input', () => Admin.refreshLimitPreview(vId, uId, pvId));
+      if (u) u.addEventListener('change', () => Admin.refreshLimitPreview(vId, uId, pvId));
+    });
+
+    bindSudoConfirm();
+  }
+
+  /* sudo 复选框二次确认：取消回退；取消勾选不需要确认 */
+  function bindSudoConfirm() {
+    const box = Admin.$('#g-sudo');
+    const modal = Admin.$('#m-sudo-confirm');
+    if (!box || !modal) return;
+    const cancel = () => { box.checked = false; R6T5.modal.close('#m-sudo-confirm'); };
+    box.addEventListener('change', () => {
+      if (box.checked) {
+        box.checked = false; // 先回退，等确认后再勾上
+        R6T5.modal.open('#m-sudo-confirm');
+      }
+    });
+    const cancelBtn = Admin.$('#sudo-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', cancel);
+    modal.addEventListener('click', e => { if (e.target === modal) cancel(); });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && modal.classList.contains('open')) cancel();
+    });
+    const confirmBtn = Admin.$('#sudo-confirm');
+    if (confirmBtn) confirmBtn.addEventListener('click', () => {
+      box.checked = true;
+      R6T5.modal.close('#m-sudo-confirm');
+    });
   }
 
   async function loadGroups() {
@@ -1149,20 +1255,23 @@
       Admin.$('#empty-add').addEventListener('click', () => openGroupModal(null));
       return;
     }
-    box.innerHTML = '<div class="grid g3">' + items.map(g =>
-      '<div class="card group-card" data-id="' + R6T5.esc(g.id) + '">' +
-      '<div class="gc-head"><h3>' + R6T5.esc(g.name) + '</h3>' +
-      (g.isDefault ? '<span class="badge acc">默认组</span>' : '') + '</div>' +
+    box.innerHTML = '<div class="grid g3">' + items.map(g => {
+      const badges =
+        (g.allowSelfSignup ? '<span class="badge info">自助注册</span>' : '') +
+        (g.isSudo ? '<span class="badge warn">sudo</span>' : '') +
+        (g.isDefault ? '<span class="badge acc">默认组</span>' : '');
+      return '<div class="card group-card" data-id="' + R6T5.esc(g.id) + '">' +
+      '<div class="gc-head"><h3>' + R6T5.esc(g.name) + '</h3>' + badges + '</div>' +
       '<div class="gc-grid">' +
-      '<div class="gc-cell"><div class="k">空间上限</div><div class="v">' + Admin.bytes(g.spaceLimitBytes) + '</div></div>' +
-      '<div class="gc-cell"><div class="k">单文件上限</div><div class="v">' + Admin.bytes(g.maxFileSizeBytes) + '</div></div>' +
-      '<div class="gc-cell"><div class="k">7 天上传流量</div><div class="v">' + Admin.bytes(g.traffic7dLimitBytes) + '</div></div>' +
+      '<div class="gc-cell"><div class="k">空间上限</div><div class="v">' + R6T5.esc(g.spaceLimitText || Admin.bytes(g.spaceLimitBytes)) + '</div></div>' +
+      '<div class="gc-cell"><div class="k">单文件上限</div><div class="v">' + R6T5.esc(g.maxFileSizeText || Admin.bytes(g.maxFileSizeBytes)) + '</div></div>' +
+      '<div class="gc-cell"><div class="k">7 天上传流量</div><div class="v">' + R6T5.esc(g.traffic7dLimitText || Admin.bytes(g.traffic7dLimitBytes)) + '</div></div>' +
       '</div>' +
       '<div class="row tight"><span class="muted small">成员 ' + (g.userCount || 0) + ' 人</span><span class="spacer"></span>' +
       '<button class="btn sm" type="button" data-act="edit">编辑</button>' +
       '<button class="btn sm danger" type="button" data-act="del">删除</button></div>' +
-      '</div>'
-    ).join('') + '</div>';
+      '</div>';
+    }).join('') + '</div>';
 
     box.querySelectorAll('[data-act="edit"]').forEach(b =>
       b.addEventListener('click', () => openGroupModal(items.find(x => x.id === b.closest('.card').dataset.id))));
@@ -1178,29 +1287,45 @@
     Admin.$('#group-err').textContent = '';
     title.textContent = g ? '编辑用户组' : '新建用户组';
 
-    const setLimit = (id, bytes) => {
-      const v = Admin.fromBytes(bytes || 0);
-      Admin.$('#' + id + '-v').value = v.value;
-      Admin.$('#' + id + '-u').value = v.unit;
+    const setLimit = (prefix, bytesStr) => {
+      const parts = Admin.splitLimit(bytesStr);
+      Admin.$('#' + prefix + '-v').value = parts ? parts.value : '';
+      Admin.$('#' + prefix + '-u').value = parts ? parts.unit : 'GB';
+      Admin.refreshLimitPreview(prefix + '-v', prefix + '-u', prefix + '-pv');
     };
     setLimit('g-space', g && g.spaceLimitBytes);
     setLimit('g-file', g && g.maxFileSizeBytes);
     setLimit('g-traffic', g && g.traffic7dLimitBytes);
     Admin.$('#g-name').value = g ? g.name : '';
     Admin.$('#g-default').checked = !!(g && g.isDefault);
+    Admin.$('#g-self-signup').checked = !!(g && g.allowSelfSignup);
+    Admin.$('#g-sudo').checked = !!(g && g.isSudo);
     R6T5.modal.open('#m-group');
   }
 
   async function onGroupSubmit(ev) {
     ev.preventDefault();
     const err = Admin.$('#group-err');
+    err.textContent = '';
     const name = Admin.$('#g-name').value.trim();
-    const space = Admin.toBytes(Admin.$('#g-space-v').value, Admin.$('#g-space-u').value);
-    const file = Admin.toBytes(Admin.$('#g-file-v').value, Admin.$('#g-file-u').value);
-    const traffic = Admin.toBytes(Admin.$('#g-traffic-v').value, Admin.$('#g-traffic-u').value);
+    const space = Admin.readLimit('g-space-v', 'g-space-u');
+    const file = Admin.readLimit('g-file-v', 'g-file-u');
+    const traffic = Admin.readLimit('g-traffic-v', 'g-traffic-u');
     if (!name) { err.textContent = '请填写组名'; return; }
-    if (space == null || file == null || traffic == null) { err.textContent = '三个上限都需填写正数'; return; }
-    const body = { name, spaceLimitBytes: space, maxFileSizeBytes: file, traffic7dLimitBytes: traffic, isDefault: Admin.$('#g-default').checked };
+    if (!space || !file || !traffic) { err.textContent = '三个上限都需填写合法数值'; return; }
+    // 两种写法都带：对象写法为契约主形态；字节字符串为旧写法兼容（含当前 PATCH 适配层）
+    const body = {
+      name,
+      spaceLimit: { value: space.value, unit: space.unit },
+      spaceLimitBytes: space.bytes.toString(),
+      maxFileSize: { value: file.value, unit: file.unit },
+      maxFileSizeBytes: file.bytes.toString(),
+      traffic7dLimit: { value: traffic.value, unit: traffic.unit },
+      traffic7dLimitBytes: traffic.bytes.toString(),
+      allowSelfSignup: Admin.$('#g-self-signup').checked,
+      isSudo: Admin.$('#g-sudo').checked,
+      isDefault: Admin.$('#g-default').checked
+    };
     try {
       if (editingGroup) await Admin.patch('/api/admin/groups/' + encodeURIComponent(editingGroup.id), body);
       else await Admin.post('/api/admin/groups', body);
@@ -1446,6 +1571,87 @@
     });
 
     f.addEventListener('submit', onSettingsSave);
+
+    await initUpdateStatus();
+  }
+
+  /* ---------- 关于 / 更新 ---------- */
+  function updateStatusReasonText(reason) {
+    switch (reason) {
+      case 'network': return '：网络不可用';
+      case 'invalid_json': return '：返回内容无法解析';
+      default: return reason ? '：服务端响应异常（' + reason + '）' : '';
+    }
+  }
+
+  async function initUpdateStatus() {
+    const box = Admin.$('#update-status');
+    if (!box) return;
+    const latest = Admin.$('#update-latest');
+    const btn = Admin.$('#update-check-btn');
+
+    const paintCurrent = (cur) => {
+      const v = Admin.$('#update-current-version');
+      const b = Admin.$('#update-current-built');
+      if (v) v.textContent = (cur && cur.version) || '—';
+      if (b) b.textContent = cur && cur.builtAt ? Admin.time(cur.builtAt) : '—';
+    };
+
+    const render = (d) => {
+      paintCurrent(d && d.current);
+      if (!d) return;
+      if (d.checked === false) {
+        latest.classList.add('hide');
+        box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>暂时无法检查更新（无网络）' +
+          R6T5.esc(updateStatusReasonText(d.reason)) + '</div></div>';
+        return;
+      }
+      if (d.hasUpdate === false) {
+        latest.classList.add('hide');
+        box.innerHTML = '<div class="note ok"><span class="ico">✓</span><div>已是最新版本</div></div>';
+        return;
+      }
+      if (d.hasUpdate === true && d.latest) {
+        const L = d.latest;
+        box.innerHTML = '<div class="note info"><span class="ico">i</span><div>发现新版本 ' +
+          R6T5.esc(L.version || '') + '</div></div>';
+        Admin.$('#update-latest-version').textContent = L.version || '—';
+        Admin.$('#update-latest-published').textContent = L.publishedAt ? Admin.time(L.publishedAt) : '—';
+        Admin.$('#update-latest-notes').textContent = L.notes || '';
+        const link = Admin.$('#update-latest-link');
+        if (L.commentUrl) { link.href = L.commentUrl; link.classList.remove('hide'); }
+        else link.classList.add('hide');
+        Admin.$('#update-latest-command').textContent = L.upgradeCommand || '';
+        latest.classList.remove('hide');
+      }
+    };
+
+    const load = async () => {
+      box.innerHTML = '<div class="faint small">正在检查更新…</div>';
+      latest.classList.add('hide');
+      try {
+        const d = await Admin.get('/api/admin/update-status');
+        render(d);
+      } catch (e) {
+        // 无网 / 远端异常时按「暂时无法检查更新」处理，不弹红字错误
+        box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>暂时无法检查更新（无网络）</div></div>';
+      }
+    };
+
+    if (btn) btn.addEventListener('click', load);
+
+    const copyBtn = Admin.$('#update-copy-cmd');
+    if (copyBtn) copyBtn.addEventListener('click', async () => {
+      const text = Admin.$('#update-latest-command').textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        R6T5.toast('升级命令已复制', 'ok');
+      } catch (_) {
+        R6T5.toast('复制失败，请手动复制', 'warn');
+      }
+    });
+
+    await load();
   }
 
   async function onSettingsSave(ev) {
@@ -1465,8 +1671,14 @@
     } catch (e) { Admin.toastErr(e); }
   }
 
-  /* ---------- 登录 login ---------- */
+  /* ---------- 登录 login（管理员密码表单 + sudo 用户组账号表单） ---------- */
   function initLogin() {
+    bindAdminPasswordForm();
+    bindSudoLoginForm();
+    showExistingSessionHint();
+  }
+
+  function bindAdminPasswordForm() {
     const form = Admin.$('#login-form');
     if (!form) return;
     const err = Admin.$('#login-err');
@@ -1482,6 +1694,43 @@
         else err.textContent = (e && e.message) || '登录失败';
       }
     });
+  }
+
+  function bindSudoLoginForm() {
+    const form = Admin.$('#sudo-form');
+    if (!form) return;
+    const err = Admin.$('#sudo-err');
+    const email = Admin.$('#sudo-email');
+    const pass = Admin.$('#sudo-password');
+    form.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      err.textContent = '';
+      try {
+        await R6T5.post('/api/auth/login', { email: email.value.trim(), password: pass.value });
+        // 登录成功后再确认该会话具备管理访问权；非 sudo 组账号由会话接口 403 拒绝
+        let adminOk = true;
+        try { await R6T5.get('/api/admin/session'); }
+        catch (_) { adminOk = false; }
+        if (!adminOk) {
+          const e = new Error('该账号不属于 sudo 用户组，请使用管理员密码登录');
+          e.status = 403; throw e;
+        }
+        global.location.href = '/admin/home.html';
+      } catch (e) {
+        if (e && e.status === 403) err.textContent = '该账号不属于 sudo 用户组，请使用管理员密码登录';
+        else err.textContent = (e && e.message) || '登录失败';
+      }
+    });
+  }
+
+  /* 已有前台账号会话时给一句提示（重定向由后端处理） */
+  async function showExistingSessionHint() {
+    const box = Admin.$('#existing-session-note');
+    if (!box) return;
+    try {
+      const me = await R6T5.get('/api/me');
+      if (me && me.user) box.classList.remove('hide');
+    } catch (_) { /* 无前台会话，不提示 */ }
   }
 
   /* ---------- 弹窗通用绑定（遮罩点击 / ESC / data-close） ---------- */

@@ -203,3 +203,27 @@ td .row-actions .btn{white-space:nowrap}
 }
 .del-option input{accent-color:var(--acc);flex:none}
 .del-warn{margin-top:var(--s2);font-size:var(--fs-sm);color:var(--danger)}
+
+/* ---------- P7：用户组限额预览 / sudo 二次确认 ---------- */
+.limit-preview{display:block;margin-top:6px;font-size:var(--fs-xs);color:var(--faint);font-variant-numeric:tabular-nums}
+.limit-preview.is-err{color:var(--danger)}
+.modal-sm{max-width:420px}
+.check + .help{margin:-2px 0 var(--s3) 25px}
+
+/* ---------- P7：管理端登录页分隔线 ---------- */
+.login-divider{display:flex;align-items:center;gap:var(--s3);margin:var(--s4) 0;color:var(--faint);font-size:var(--fs-xs)}
+.login-divider::before,.login-divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.sudo-sub{margin:0 0 var(--s3)}
+
+/* ---------- P7：关于 / 更新 ---------- */
+.update-card .page-head{margin-bottom:var(--s4)}
+.update-meta{margin-bottom:var(--s4)}
+.update-status{margin-bottom:var(--s4)}
+.update-notes{font-size:var(--fs-sm);color:var(--fg-dim);white-space:pre-wrap;margin:var(--s2) 0}
+.update-cmd-row{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s3);flex-wrap:wrap}
+.update-cmd{
+  flex:1;min-width:0;padding:var(--s2) var(--s3);border-radius:var(--r-sm);
+  background:var(--panel-3);border:1px solid var(--line);
+  font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--fg-dim);
+  word-break:break-all;white-space:pre-wrap;
+}

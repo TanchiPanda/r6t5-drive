@@ -17,6 +17,10 @@
     <div class="login-card">
       <div class="login-brand"><span class="dot"></span><div>R6T5 Drive<small>管理控制台</small></div></div>
       <p class="sub">请输入管理密码进入后台。管理密码由服务端首次启动时生成并打印在容器日志中。</p>
+      <div class="note info hide" id="existing-session-note" role="status">
+        <span class="ico">i</span>
+        <div class="note-body">当前已有前台账号会话；如需进入管理后台，请使用 sudo 用户组账号或管理员密码登录。</div>
+      </div>
       <div class="card">
         <form id="login-form" novalidate>
           <div class="field">
@@ -25,6 +29,22 @@
             <span class="login-err" id="login-err"></span>
           </div>
           <button class="btn primary block lg" type="submit">登录后台</button>
+        </form>
+      </div>
+      <div class="login-divider"><span>或</span></div>
+      <div class="card">
+        <p class="sub sudo-sub">sudo 用户组账号可直接进入</p>
+        <form id="sudo-form" novalidate>
+          <div class="field">
+            <label for="sudo-email">邮箱</label>
+            <input class="input" id="sudo-email" name="email" type="email" autocomplete="username" placeholder="you@example.com">
+          </div>
+          <div class="field">
+            <label for="sudo-password">密码</label>
+            <input class="input" id="sudo-password" name="password" type="password" autocomplete="current-password" placeholder="请输入账号密码">
+            <span class="login-err" id="sudo-err"></span>
+          </div>
+          <button class="btn primary block lg" type="submit">进入后台</button>
         </form>
       </div>
       <p class="faint small mt4 center">普通用户请前往前台登录，此处仅对管理员开放。</p>

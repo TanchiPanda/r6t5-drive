@@ -82,6 +82,29 @@
               </div>
             </form>
           </div>
+
+          <div class="card update-card" style="max-width:720px">
+            <div class="page-head">
+              <div><h2>关于 / 更新</h2><p class="sub">版本信息与远端发布检查</p></div>
+              <div class="actions"><button class="btn sm" id="update-check-btn" type="button">检查更新</button></div>
+            </div>
+            <div class="update-meta">
+              <div class="kv-line"><span class="k">当前版本</span><span class="v" id="update-current-version">—</span></div>
+              <div class="kv-line"><span class="k">构建时间</span><span class="v" id="update-current-built">—</span></div>
+            </div>
+            <div id="update-status" class="update-status"></div>
+            <div id="update-latest" class="hide">
+              <div class="kv-line"><span class="k">最新版本</span><span class="v" id="update-latest-version">—</span></div>
+              <div class="kv-line"><span class="k">发布时间</span><span class="v" id="update-latest-published">—</span></div>
+              <div class="update-notes" id="update-latest-notes"></div>
+              <a class="btn sm" id="update-latest-link" target="_blank" rel="noopener">查看发布说明</a>
+              <div class="update-cmd-row">
+                <code class="update-cmd" id="update-latest-command"></code>
+                <button class="btn sm ghost" id="update-copy-cmd" type="button">复制</button>
+              </div>
+              <p class="help mt2">升级后刷新本页</p>
+            </div>
+          </div>
         </div>
       </div>
     </main>

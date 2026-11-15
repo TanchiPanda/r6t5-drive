@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>注册 · R6T5 Drive</title>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body data-page="signup">
+<div class="shell no-side">
+  <div class="login-wrap">
+    <div class="card login-card">
+      <div class="login-logo"><span class="dot"></span><div>R6T5 Drive<small>个人空间</small></div></div>
+      <h1 class="login-title">注册</h1>
+      <p class="login-sub">创建邮箱账号进入个人网盘</p>
+
+      <div class="note hide" id="signup-note" role="status">
+        <span class="ico">i</span>
+        <div class="note-body" id="signup-note-body"></div>
+      </div>
+
+      <form id="signup-form" novalidate>
+        <div class="field">
+          <label for="signup-email">邮箱</label>
+          <input class="input" id="signup-email" name="email" type="email" autocomplete="username" placeholder="you@example.com" required>
+        </div>
+        <div class="field">
+          <label for="signup-password">密码</label>
+          <input class="input" id="signup-password" name="password" type="password" autocomplete="new-password" required>
+        </div>
+        <div class="field">
+          <label for="signup-confirm">确认密码</label>
+          <input class="input" id="signup-confirm" name="passwordConfirm" type="password" autocomplete="new-password" required>
+        </div>
+        <div class="login-err" id="signup-err"></div>
+        <div class="login-actions">
+          <button class="btn primary lg block" id="signup-submit" type="submit">注册</button>
+          <a class="btn ghost" id="signup-login-link" href="/login">返回登录</a>
+        </div>
+      </form>
+    </div>
+    <div class="login-foot">R6T5 Drive · 文件存在你自己的存储里</div>
+  </div>
+</div>
+<div class="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

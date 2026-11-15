@@ -67,26 +67,32 @@
           <div class="field">
             <label>空间上限</label>
             <div class="limit-input">
-              <input class="input" id="g-space-v" type="number" min="1" step="0.1">
-              <select class="select" id="g-space-u"><option value="GB">GB</option><option value="MB">MB</option></select>
+              <input class="input" id="g-space-v" type="number" min="0" step="0.1">
+              <select class="select" id="g-space-u"><option value="B">B</option><option value="KB">KB</option><option value="MB">MB</option><option value="GB" selected>GB</option><option value="TB">TB</option><option value="PB">PB</option><option value="EB">EB</option></select>
             </div>
+            <span class="limit-preview" id="g-space-pv"></span>
           </div>
           <div class="field">
             <label>单文件上限</label>
             <div class="limit-input">
-              <input class="input" id="g-file-v" type="number" min="1" step="0.1">
-              <select class="select" id="g-file-u"><option value="GB">GB</option><option value="MB">MB</option></select>
+              <input class="input" id="g-file-v" type="number" min="0" step="0.1">
+              <select class="select" id="g-file-u"><option value="B">B</option><option value="KB">KB</option><option value="MB">MB</option><option value="GB" selected>GB</option><option value="TB">TB</option><option value="PB">PB</option><option value="EB">EB</option></select>
             </div>
+            <span class="limit-preview" id="g-file-pv"></span>
           </div>
           <div class="field span2">
             <label>7 天上传流量</label>
             <div class="limit-input">
-              <input class="input" id="g-traffic-v" type="number" min="1" step="0.1">
-              <select class="select" id="g-traffic-u"><option value="GB">GB</option><option value="MB">MB</option></select>
+              <input class="input" id="g-traffic-v" type="number" min="0" step="0.1">
+              <select class="select" id="g-traffic-u"><option value="B">B</option><option value="KB">KB</option><option value="MB">MB</option><option value="GB" selected>GB</option><option value="TB">TB</option><option value="PB">PB</option><option value="EB">EB</option></select>
             </div>
+            <span class="limit-preview" id="g-traffic-pv"></span>
           </div>
         </div>
         <label class="check"><input type="checkbox" id="g-default"><span>设为默认用户组（新用户自动加入）</span></label>
+        <label class="check"><input type="checkbox" id="g-self-signup"><span>允许自助注册（新用户自动加入本组）</span></label>
+        <span class="help" id="g-self-signup-note">多个组同时开启时，注册会落到创建时间最早的那个组</span>
+        <label class="check"><input type="checkbox" id="g-sudo"><span>sudo 用户组（成员可直接进入管理控制台）</span></label>
         <div class="login-err mt2" id="group-err"></div>
       </div>
       <div class="modal-foot">
@@ -94,6 +100,19 @@
         <button class="btn primary" type="submit">保存</button>
       </div>
     </form>
+  </div>
+</div>
+
+<div class="modal-mask" id="m-sudo-confirm">
+  <div class="modal modal-sm">
+    <div class="modal-head"><h3>确认开启 sudo 用户组？</h3></div>
+    <div class="modal-body">
+      <p class="help" id="sudo-confirm-text">sudo 用户组等于把管理面板交给该组成员：他们无需管理员密码即可访问全部管理页与接口。确定开启？</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" type="button" id="sudo-cancel">取消</button>
+      <button class="btn danger" type="button" id="sudo-confirm">确定开启</button>
+    </div>
   </div>
 </div>
 

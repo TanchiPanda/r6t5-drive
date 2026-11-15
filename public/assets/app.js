@@ -240,6 +240,18 @@
     }
     renderSetup(status);
     bindLoginForm(status);
+    loadSignupEntry();
+  }
+
+  /* 注册入口：仅当 signup-config.available === true 时展示；supabase 模式不出现 */
+  async function loadSignupEntry() {
+    var link = document.getElementById('signup-link');
+    if (!link) return;
+    try {
+      var cfg = await R6T5.get('/api/auth/signup-config');
+      if (cfg && cfg.available === true) link.classList.remove('hide');
+      else link.classList.add('hide');
+    } catch (_) { link.classList.add('hide'); }
   }
 
   function renderSetup(s) {
@@ -309,6 +321,85 @@
           default: msg = (err && err.message) || '登录失败';
         }
         errBox.textContent = msg;
+      }
+    });
+  }
+
+  /* ================= 注册页 ================= */
+
+  async function initSignup() {
+    var form = document.getElementById('signup-form');
+    var btn = document.getElementById('signup-submit');
+    var email = document.getElementById('signup-email');
+    var pass = document.getElementById('signup-password');
+    var confirm = document.getElementById('signup-confirm');
+    var errBox = document.getElementById('signup-err');
+    var note = document.getElementById('signup-note');
+    var noteBody = document.getElementById('signup-note-body');
+    var loginLink = document.getElementById('signup-login-link');
+    var minLen = 8;
+    var cfg = null;
+
+    try { cfg = await R6T5.get('/api/auth/signup-config'); } catch (_) { cfg = null; }
+
+    function showNote(cls, text) {
+      note.className = 'note ' + cls;
+      noteBody.textContent = text;
+      note.classList.remove('hide');
+    }
+
+    // Supabase 托管账号：不在本站注册，引导回登录页
+    if (cfg && cfg.source === 'supabase') {
+      showNote('info', '当前由 Supabase 管理账号，请用 Supabase 注册');
+      form.classList.add('hide');
+      btn.disabled = true;
+      loginLink.classList.remove('hide');
+      return;
+    }
+
+    if (!cfg || cfg.available !== true) {
+      var closedMsg = cfg && cfg.reason === 'admin_disabled' ? '管理员未开放注册' : '当前未开放自助注册';
+      showNote('warn', closedMsg);
+      btn.disabled = true;
+      email.disabled = true;
+      pass.disabled = true;
+      confirm.disabled = true;
+      return;
+    }
+
+    minLen = cfg.minPasswordLength || 8;
+
+    function validate() {
+      var msg = '';
+      if (confirm.value && confirm.value !== pass.value) msg = '两次输入的密码不一致';
+      else if (pass.value && pass.value.length < minLen) msg = '密码至少 ' + minLen + ' 位';
+      errBox.textContent = msg;
+      return !msg;
+    }
+
+    pass.addEventListener('input', validate);
+    confirm.addEventListener('input', validate);
+    confirm.addEventListener('blur', validate);
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (!validate()) return;
+      errBox.textContent = '';
+      btn.disabled = true;
+      var old = btn.textContent;
+      btn.textContent = '注册中…';
+      try {
+        await R6T5.post('/api/auth/signup', {
+          email: email.value.trim().toLowerCase(),
+          password: pass.value,
+          passwordConfirm: confirm.value
+        });
+        location.href = '/files';
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = old;
+        // invalid_signup 等：后端 message 原样展示，不自行改写
+        errBox.textContent = (err && err.message) || '注册失败';
       }
     });
   }
@@ -2116,6 +2207,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     var page = document.body.getAttribute('data-page');
     if (page === 'login') initLogin();
+    else if (page === 'signup') initSignup();
     else if (page === 'files') initFiles();
     else if (page === 'account') initAccount();
     else if (page === 'share') initShare();
