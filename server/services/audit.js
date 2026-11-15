@@ -12,6 +12,10 @@ const VALID_ACTIONS = new Set([
   'signup', 'group_update',
   // P8-B 邮箱确认 / 第三方登录
   'email_confirm', 'oauth_login',
+  // P9-C 积分 / 商店 / 兑换码 / 付费分享
+  'order_mark_paid', 'order_refund', 'order_cancel', 'points_adjust',
+  'redeem_generate', 'redeem_used', 'product_update', 'group_expired',
+  'expire_notice', 'share_purchase',
 ]);
 
 export function writeAudit({ email, action, target = null, bytes = null, ip = null, detail = null }) {
