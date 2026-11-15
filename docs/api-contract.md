@@ -21,7 +21,9 @@
 | `invalid_input` | 400 | 字段校验失败（details.field 指明） |
 | `not_acknowledged` | 400 | 创建存储策略未勾选披露确认（details.publicFields） |
 | `unauthorized` | 401 | 无有效会话 |
-| `invalid_credentials` | 401 | Supabase 账号密码错 |
+| `invalid_credentials` | 401 | 账号密码错（supabase / 本地统一文案） |
+| `account_banned` | 403 | 账号已被封禁（P6） |
+| `not_supported_in_source` | 409 | 当前账号来源不支持该操作（P6） |
 | `invalid_admin_password` | 401 | 管理密码错 |
 | `forbidden` | 403 | 无权限（含普通用户访问 /admin） |
 | `not_found` | 404 | 节点/资源不存在 |
@@ -261,7 +263,7 @@ Supabase 未配置 → 412 `supabase_not_configured`。错误密码 → 401 `inv
 从 Supabase `admin/users` 拉取并 upsert 本地映射 → `{ ok:true, added:3, updated:1, total:14 }`
 
 ### DELETE `/api/admin/users/:id`
-禁止删除自己/管理员 → 409；否则软禁用户（`disabled=true`）+ 清空会话。
+> **P6 起语义改为真正删号**，详见 §P6-4。`?deleteFiles=0|1` 控制是否连带删除文件节点与物理对象；Supabase 账号仅删本地记录（`supabaseUserKept:true`）。旧版「仅禁用用户」的行为已废弃。
 
 ---
 
@@ -671,3 +673,135 @@ body `{ path, targetPath? }` → 201 `{ extracted, skipped: [{name, reason}], to
 - Reader：EOCD → Central Directory → Local File Header，`createInflateRaw` 流式解压并校验 CRC/尺寸
 - ZIP64（>4 GiB）与 AES 加密不支持：超出按上限拒绝（`zip_too_large` / `zip_invalid`）
 - 兼容性实测：`unzip -t` 通过；能被系统 `zip` 生成的包反向读回（含中文目录名）
+
+---
+
+# P6 追加：控制台账号来源与本地账号（本段优先于上文冲突项）
+
+## §P6 控制台：账号来源与本地账号
+
+### P6-0 概念与存储
+
+- **账号来源 `userSource`**：站点级设置，存 SQLite `settings` 表，key **`userSource`**，取值 `"supabase"` | `"volume"`；**缺省（无该行）= `"supabase"`**，保持现网行为不变。
+  - `supabase`：登录 / 建号走 Supabase，会话携带 `accessToken` / `refreshToken`。
+  - `volume`：本地数据卷账号体系，密码以 scrypt 落 `users.passwordHash`，会话为本地签名 cookie（`local:true`，token 字段为 `null`）。
+- 切换时间落 `settings` key **`userSourceChangedAt`**（ISO 字符串，未切换为 `null`）。
+- 读写统一走 `server/services/user-source.js`：`getUserSource()` / `setUserSource(src)` / `isVolumeSource()` / `getSwitchedAt()` / `setSwitchedAt(iso)`；其它模块只通过它读，不散写 SQL。
+- 本地密码格式：`scrypt$N$r$p$saltB64$hashB64`，salt 16B、hash 64B，`N=16384 r=8 p=1`（`hashLocalPassword` / `verifyLocalPassword`）。
+
+### P6-1 数据模型变更（`users` 表加列，不新建表）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `passwordHash` | TEXT | scrypt 派生值；有值即本地账号（`source=local`），空 = Supabase 账号 |
+| `status` | TEXT NOT NULL DEFAULT `active` | `active` \| `banned`；与老列 `disabled` 同步：`disabled=1` ⇔ `status='banned'`。**读取以 `status` 为准**，写入两列都写 |
+| `registeredAt` | TEXT | 注册/创建成功时间；老库迁移用 `createdAt` 回填 |
+
+`db.js` 的 `migrate()` 用 `PRAGMA table_info(users)` 检测缺列后 `ALTER TABLE ADD COLUMN`，并回填 `registeredAt`、按 `disabled` 回填 `status`；已有 `disabled` 与 `status` 互相校正。文件节点仍以 email 为归属键，沿用现有 `nodes` 记录。
+
+### P6-2 账号来源管理接口（挂在 `/api/admin`，需管理员会话）
+
+#### GET `/api/admin/user-source`
+200：
+```json
+{
+  "userSource": "supabase",
+  "default": "supabase",
+  "storage": { "table": "settings", "key": "userSource" },
+  "counts": { "total": 12, "localAccounts": 3 },
+  "switchedAt": "2026-11-15T01:51:08.249Z"
+}
+```
+- `counts.total`：用户总数；`counts.localAccounts`：有 `passwordHash` 的用户数。
+- `switchedAt`：最近一次切换时间（`userSourceChangedAt`），未切换为 `null`。
+
+#### PUT `/api/admin/user-source`
+body `{ "source": "supabase"|"volume", "confirm": true }`
+- 200：`{ "ok": true, "switchedFrom": "supabase", "switchedTo": "volume", "changedAt": "…" }`（未发生切换时幂等返回当前状态，`changedAt` 为现有值）。
+- 400 `invalid_input`：
+  - `source` 非法 → `details.field = "source"`；
+  - `confirm` 不为 `true` → `details.field = "confirm"`。
+- 生效时写审计 action `user_source_switch`，detail 形如 `"supabase->volume"`，并把 `changedAt` 落 `settings.userSourceChangedAt`。
+
+### P6-3 登录与会话分流
+
+#### POST `/api/auth/login`
+按 `getUserSource()` 分流：
+- **supabase**：维持现状（Supabase 密码登录，会话带 `accessToken` / `refreshToken`）；未配置 Supabase → 412 `supabase_not_configured`。
+- **volume**：本地校验 scrypt 密码；成功后更新 `lastLoginAt`（`registeredAt` 已在建号时落库），写会话 `{ v:1, email, accessToken:null, refreshToken:null, dev:false, local:true, exp: now+7d }`，沿用同一套 HMAC 签名 cookie `r6t5_sid` 与中间件，不新造 session 机制。**volume 模式下 Supabase 未配置不再抛 412。**
+
+**错误语义（硬性要求）：**
+
+| 场景 | HTTP | code | message |
+|---|---|---|---|
+| 账号不存在 | 401 | `invalid_credentials` | 「邮箱或密码错误」 |
+| 密码错误 | 401 | `invalid_credentials` | 「邮箱或密码错误」 |
+| 已封禁（`status='banned'` / `disabled=1`） | 403 | `account_banned` | 「账号已被封禁，请联系管理员」 |
+
+- 「账号不存在」与「密码错误」对外**完全一致**：相同 status / code / message（逐字节），不通过 code/message/details 暴露账号是否存在；内部分流只体现在审计 detail（`local_no_user` / `local_bad_password`）与服务端日志。
+- 沿用现有 IP+邮箱 5 次 / 10 分钟限流（`loginFails` 等），本地登录同样计数。
+
+#### POST `/api/auth/signup`
+- **volume 模式**：拒绝 → 409 `not_supported_in_source`，message「当前为数据卷账号模式，请由管理员创建账号」。
+- **supabase 模式**：维持现有 Supabase 自助注册逻辑（仍受 `allowSignup` 开关约束）。
+
+#### POST `/api/auth/dev-login`
+保持 `DEV_AUTH` 开关行为不变（`DEV_AUTH=1` 才可调用），不受来源切换影响。
+
+#### 会话解析 `resolveUser()`（`server/middleware/auth.js`）
+- 会话带 `local:true`（或当前 `userSource==='volume'`）时**跳过 Supabase access token 校验**；
+- **每次请求都查库校验 `status` / `disabled`**：被封禁立即 403 `account_banned`（不依赖会话过期，这是「封禁立刻让既有 session 失效」的机制）；
+- 用户行不存在 → 401 `unauthorized`（账号不存在）。
+
+#### GET `/api/setup/status`
+- `userSource === 'volume'` 时**跳过 supabase 检查**：不因未配 Supabase 卡在 `next='supabase'`。
+- 返回体新增 `userSource` 字段；`checks.supabase` 在 volume 模式语义为「不需要」，返回 `true` 并加 `checks.supabaseRequired: false`；volume 模式 hint 不出现 Supabase 字样。
+
+### P6-4 管理端用户操作（`/api/admin/users`，需管理员会话）
+
+#### GET `/api/admin/users`
+每项补充字段：
+
+| 字段 | 说明 |
+|---|---|
+| `status` | `active` \| `banned` |
+| `registeredAt` | 注册/创建时间；空值为 `null` |
+| `source` | `local`（有 `passwordHash`）否则 `supabase` |
+| `lastLoginAt` | 保持原字段；空值为 `null`（前端显示「无记录」） |
+
+#### POST `/api/admin/users`
+- **volume 模式**：本地建号。email 唯一（重复 → 409 `conflict`）、password scrypt 落库、`displayName`、`groupId`、`status=active`、`registeredAt=now`；写审计 `user_create`（detail `local`）。201 `{ item }`。
+- **supabase 模式**：维持现有 Supabase 建号逻辑（`adminCreateUser`），不假装本地建号；Supabase 未配置 → 412 `supabase_not_configured`。审计 detail `supabase`。
+
+#### POST `/api/admin/users/:id/password`
+- **volume 模式**：本地改密，写审计 `user_password` → 200 `{ ok:true, item }`。
+- **supabase 模式**：409 `not_supported_in_source`，message「Supabase 账号密码请在 Supabase 侧修改」（与该用户是否带本地 hash 无关，按当前来源判定）。
+
+#### PATCH `/api/admin/users/:id`
+- 支持 `status: "active"|"banned"`（与 `disabled` 同步写入）：封禁写审计 `user_ban`，解封写 `user_unban`。
+- 保留现有 `groupId` / `displayName` 行为；兼容老字段 `disabled`（true ⇔ banned）。
+- 200 `{ item }`。
+
+#### DELETE `/api/admin/users/:id?deleteFiles=0|1`（**语义改为真正删号**）
+- `deleteFiles=0`：仅删账号，保留文件节点与存储对象。
+- `deleteFiles=1`：删账号并删除其文件目录——先清空该 email 名下所有 nodes（含回收站），再通过现有存储驱动（`server/services/storage`）删除物理对象与目录，复用 admin-trash 的清理方式，不另写一套物理删除；返回 `{ deletedFiles: { nodes, bytes } }`。
+- **删账号 = 删除 `users` 行**（本地账号彻底消失）。若该用户是 Supabase 账号（无 `passwordHash`），**只删本地记录**，响应带 `supabaseUserKept: true`，message 说明「Supabase 中的用户未被删除」。
+- 同时清理该账号的附属本地记录：`shares`、`share_hits`、`app_passwords`、`upload_sessions`、`traffic`。
+- 写审计 `user_delete`，detail 含 `files:kept` / `files:deleted`（Supabase 账号另带 `supabase:kept`）。
+- 删号后既有会话失效：users 行删除后 `resolveUser` 返回 401（被封禁则 403），不会出现 500。
+
+### P6-5 新增错误码
+
+| HTTP | code | 场景 |
+|---|---|---|
+| 403 | `account_banned` | 账号被封禁（登录或既有会话每次请求校验） |
+| 409 | `not_supported_in_source` | 当前账号来源不支持该操作（volume 自助注册；supabase 侧本地改密等） |
+
+### P6-6 审计动作白名单补充
+
+`server/services/audit.js` 的 `VALID_ACTIONS` 新增：`user_ban`、`user_unban`、`user_delete`、`user_create`、`user_password`、`user_source_switch`。不在白名单的动作旧实现会被归一化成 `login`，以上动作均已显式入列，可按 `/api/admin/audit?action=<action>` 检索到原始动作名。
+
+### P6-7 未覆盖 / 沙箱限制
+
+- 沙箱内无真实 Supabase：supabase 分支只验证了「未配置时的行为」（412 / 跳过 / 409），真实 Supabase 密码登录、建号、改密、远端用户保留等链路需在有 Supabase 实例的环境复测。
+

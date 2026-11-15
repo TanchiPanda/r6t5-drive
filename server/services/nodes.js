@@ -11,10 +11,11 @@ export function upsertUser({ id, email, displayName = '', groupId = null }) {
     return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   }
   const uid = id || `u_${Buffer.from(email).toString('hex').slice(0, 16)}`;
+  const now = nowIso();
   db.prepare(
-    `INSERT INTO users (id, email, displayName, groupId, disabled, lastLoginAt, createdAt)
-     VALUES (?, ?, ?, ?, 0, ?, ?)`
-  ).run(uid, email, displayName, groupId, nowIso(), nowIso());
+    `INSERT INTO users (id, email, displayName, groupId, disabled, status, passwordHash, registeredAt, lastLoginAt, createdAt)
+     VALUES (?, ?, ?, ?, 0, 'active', NULL, ?, ?, ?)`
+  ).run(uid, email, displayName, groupId, now, null, now);
   return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
 }
 
@@ -105,6 +106,7 @@ export function fileCount(email) {
 }
 
 export function publicUser(user, group) {
+  const status = user.status === 'banned' || user.disabled === 1 ? 'banned' : 'active';
   return {
     id: user.id,
     email: user.email,
@@ -112,7 +114,11 @@ export function publicUser(user, group) {
     groupId: user.groupId || group?.id || null,
     groupName: group?.name || '',
     isAdmin: false,
-    disabled: !!user.disabled,
+    disabled: status === 'banned',
+    status,
+    source: user.passwordHash ? 'local' : 'supabase',
+    registeredAt: user.registeredAt || user.createdAt || null,
+    lastLoginAt: user.lastLoginAt || null,
   };
 }
 

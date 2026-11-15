@@ -364,6 +364,102 @@ function check(name, cond, detail) {
   check('22c. 软删后同名重建 201（不再是 500 UNIQUE）', up2.status === 201, `status=${up2.status} code=${up2.json?.error?.code}`);
 }
 
+// ================= P6：账号来源切换 + 本地账号体系（独立段落，收尾切回 supabase） =================
+// 注意：本段必须放在文件最后——前面用例默认依赖 supabase 未配置时 next='supabase'。
+// 段落末尾把 userSource 切回 supabase，保证脚本可重复跑、不影响既有断言。
+{
+  const P6_EMAIL = 'p6smoke@x.com';
+  const P6_PW = 'p6pass123';
+
+  // 56a. 切到 volume；setup/status 跳过 supabase 检查
+  const sw = await req('PUT', '/api/admin/user-source', {
+    cookie: jar.admin, body: { source: 'volume', confirm: true },
+  });
+  check('56a1. 切到 volume 200 ok:true', sw.status === 200 && sw.json?.ok === true && sw.json?.switchedTo === 'volume',
+    `status=${sw.status} body=${JSON.stringify(sw.json)}`);
+  const stAfter = await req('GET', '/api/setup/status');
+  check('56a2. volume 模式 next 不再是 supabase，userSource=volume',
+    stAfter.status === 200 && stAfter.json?.next !== 'supabase' && stAfter.json?.userSource === 'volume',
+    `next=${stAfter.json?.next} userSource=${stAfter.json?.userSource}`);
+
+  // 56b. 建本地账号 → 本地登录 200 → /api/me 200
+  const created = await req('POST', '/api/admin/users', {
+    cookie: jar.admin,
+    body: { email: P6_EMAIL, password: P6_PW, displayName: 'P6 Smoke' },
+  });
+  const p6Id = created.json?.item?.id;
+  check('56b1. volume 本地建号 201，source=local status=active',
+    created.status === 201 && created.json?.item?.source === 'local' && created.json?.item?.status === 'active',
+    `status=${created.status} item=${JSON.stringify(created.json?.item)}`);
+  const p6Login = await req('POST', '/api/auth/login', { body: { email: P6_EMAIL, password: P6_PW } });
+  jar.p6 = Object.entries(p6Login.set).map(([k, v]) => `${k}=${v}`).join('; ');
+  check('56b2. 本地密码正确登录 200', p6Login.status === 200 && p6Login.json?.ok === true,
+    `status=${p6Login.status} email=${p6Login.json?.user?.email}`);
+  const p6Me = await req('GET', '/api/me', { cookie: jar.p6 });
+  check('56b3. /api/me 200', p6Me.status === 200 && p6Me.json?.user?.email === P6_EMAIL,
+    `status=${p6Me.status} email=${p6Me.json?.user?.email}`);
+
+  // 56c. 密码错误 / 不存在邮箱 → 同一状态码、同一 code、同一文案（逐字节）
+  const badPw = await req('POST', '/api/auth/login', { body: { email: P6_EMAIL, password: 'wrong-pass' } });
+  const ghost = await req('POST', '/api/auth/login', { body: { email: 'p6-ghost@x.com', password: 'whatever1' } });
+  check('56c1. 密码错误 401 invalid_credentials',
+    badPw.status === 401 && badPw.json?.error?.code === 'invalid_credentials',
+    `status=${badPw.status} code=${badPw.json?.error?.code}`);
+  check('56c2. 不存在邮箱与密码错误 status/code/message 完全一致',
+    ghost.status === badPw.status && ghost.json?.error?.code === badPw.json?.error?.code &&
+    ghost.json?.error?.message === badPw.json?.error?.message && ghost.text === badPw.text,
+    `pw=${badPw.json?.error?.message} ghost=${ghost.json?.error?.message} sameText=${ghost.text === badPw.text}`);
+
+  // 56d. 封禁 → 旧 cookie 立刻 403；再登录 403
+  const ban = await req('PATCH', `/api/admin/users/${p6Id}`, { cookie: jar.admin, body: { status: 'banned' } });
+  check('56d1. PATCH status=banned 200，disabled 同步',
+    ban.status === 200 && ban.json?.item?.status === 'banned' && ban.json?.item?.disabled === true,
+    `status=${ban.status} item=${JSON.stringify(ban.json?.item)}`);
+  const meBanned = await req('GET', '/api/me', { cookie: jar.p6 });
+  check('56d2. 封禁后旧 cookie /api/me 403 account_banned',
+    meBanned.status === 403 && meBanned.json?.error?.code === 'account_banned',
+    `status=${meBanned.status} code=${meBanned.json?.error?.code}`);
+  const reloginBanned = await req('POST', '/api/auth/login', { body: { email: P6_EMAIL, password: P6_PW } });
+  check('56d3. 封禁后重新登录 403 account_banned',
+    reloginBanned.status === 403 && reloginBanned.json?.error?.code === 'account_banned',
+    `status=${reloginBanned.status} code=${reloginBanned.json?.error?.code}`);
+
+  // 56e. 解封 → 登录恢复 200
+  const unban = await req('PATCH', `/api/admin/users/${p6Id}`, { cookie: jar.admin, body: { status: 'active' } });
+  check('56e1. 解封 200 status=active', unban.status === 200 && unban.json?.item?.status === 'active',
+    `status=${unban.status} item=${JSON.stringify(unban.json?.item)}`);
+  const reloginOk = await req('POST', '/api/auth/login', { body: { email: P6_EMAIL, password: P6_PW } });
+  jar.p6 = Object.entries(reloginOk.set).map(([k, v]) => `${k}=${v}`).join('; ');
+  check('56e2. 解封后登录恢复 200', reloginOk.status === 200, `status=${reloginOk.status}`);
+
+  // 56f. 列表项 registeredAt / lastLoginAt 均为非空时间字符串（抽屉所需字段）
+  const list = await req('GET', `/api/admin/users?q=${encodeURIComponent(P6_EMAIL)}`, { cookie: jar.admin });
+  const p6Item = list.json?.items?.[0];
+  check('56f. 列表项 registeredAt / lastLoginAt 非空时间字符串',
+    !!p6Item && typeof p6Item.registeredAt === 'string' && p6Item.registeredAt !== '' &&
+    typeof p6Item.lastLoginAt === 'string' && p6Item.lastLoginAt !== '' && p6Item.status === 'active',
+    `registeredAt=${p6Item?.registeredAt} lastLoginAt=${p6Item?.lastLoginAt}`);
+
+  // 56g. deleteFiles=0 删号 → 既有 cookie /api/me 401/403（不 500）
+  const del = await req('DELETE', `/api/admin/users/${p6Id}?deleteFiles=0`, { cookie: jar.admin });
+  check('56g1. deleteFiles=0 删号 200', del.status === 200 && del.json?.ok === true,
+    `status=${del.status} body=${JSON.stringify(del.json)}`);
+  const meDeleted = await req('GET', '/api/me', { cookie: jar.p6 });
+  check('56g2. 删号后既有 cookie /api/me 401/403（不 500）',
+    [401, 403].includes(meDeleted.status), `status=${meDeleted.status} code=${meDeleted.json?.error?.code}`);
+
+  // 56h. 收尾切回 supabase，断言来源复位（保证脚本可重复跑、不影响前面用例）
+  const swBack = await req('PUT', '/api/admin/user-source', {
+    cookie: jar.admin, body: { source: 'supabase', confirm: true },
+  });
+  check('56h1. 切回 supabase 200', swBack.status === 200 && swBack.json?.switchedTo === 'supabase',
+    `status=${swBack.status} body=${JSON.stringify(swBack.json)}`);
+  const srcBack = await req('GET', '/api/admin/user-source', { cookie: jar.admin });
+  check('56h2. GET /api/admin/user-source 回到 supabase',
+    srcBack.status === 200 && srcBack.json?.userSource === 'supabase',
+    `status=${srcBack.status} userSource=${srcBack.json?.userSource}`);
+}
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n汇总：${results.length - failed.length}/${results.length} 通过`);
 process.exit(failed.length ? 1 : 0);

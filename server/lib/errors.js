@@ -18,6 +18,12 @@ export const quotaFile = (details) => new ApiError(413, 'quota_file', '单文件
 export const quotaTraffic = (details) => new ApiError(429, 'quota_traffic', '7 天上传流量已耗尽', details);
 export const supabaseUnreachable = (reason, details) =>
   new ApiError(400, 'supabase_unreachable', 'Supabase 配置校验失败', { reason, ...details });
+
+// ---- P6 账号来源 / 本地账号 ----
+export const accountBanned = (details) =>
+  new ApiError(403, 'account_banned', '账号已被封禁，请联系管理员', details || {});
+export const notSupportedInSource = (message, details) =>
+  new ApiError(409, 'not_supported_in_source', message || '当前账号来源不支持该操作', details || {});
 export const notImplemented = (message = '该能力在 P2 规划中') =>
   new ApiError(501, 'not_implemented', message);
 export const storageError = (message = '磁盘/适配器错误', details) =>

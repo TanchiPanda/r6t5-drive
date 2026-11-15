@@ -15,13 +15,16 @@ CREATE TABLE IF NOT EXISTS groups (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-  id           TEXT PRIMARY KEY,
-  email        TEXT NOT NULL UNIQUE,
-  displayName  TEXT NOT NULL DEFAULT '',
-  groupId      TEXT,
-  disabled     INTEGER NOT NULL DEFAULT 0,
-  lastLoginAt  TEXT,
-  createdAt    TEXT NOT NULL
+  id              TEXT PRIMARY KEY,
+  email           TEXT NOT NULL UNIQUE,
+  displayName     TEXT NOT NULL DEFAULT '',
+  groupId         TEXT,
+  disabled        INTEGER NOT NULL DEFAULT 0,
+  status          TEXT NOT NULL DEFAULT 'active',
+  passwordHash    TEXT,
+  registeredAt    TEXT,
+  lastLoginAt     TEXT,
+  createdAt       TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS nodes (

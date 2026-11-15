@@ -258,3 +258,60 @@ PREVIEW_BASE=http://127.0.0.1:8090 node tools/test-p3-preview.mjs # 14/14（脚�
 | WebDAV 在正式 `app.js` 挂载后的回归 | 未跑 | 仅在脚本自建临时 express 实例上 42/42；正式挂载已加（`/dav` 在 `express.json` 之前），需再跑一次 `tools/test-p5-dav.mjs` 确认 |
 | 真实 aria2 / 真实 OnlyOffice Document Server | 未验证 | 沙箱无法启动这两个外部服务，只对本地假 aria2 与 JWT 自校验 |
 | WebDAV 跨策略 MOVE、Range | 未验证 / 未实现 | 跨策略依赖远端驱动；Range 未实现（未写 `Accept-Ranges`，不声称 206） |
+
+## 10. 控制台：账号来源切换与本地账号（实测）
+
+### 10.1 逐项结果（实测）
+
+| # | 接口 / 能力 | 验证方式 | 结果 |
+|---|---|---|---|
+| 1 | `GET /api/admin/user-source` | 管理员登录后读取；断言 `userSource`（缺省 `supabase`）、`default`、`storage.table=settings`、`storage.key=userSource`、`counts.total/localAccounts`、`switchedAt` 字段齐全 | 通过（`test-p6-user-source.mjs` 1b/1c；smoke 56h2） |
+| 2 | `PUT /api/admin/user-source`（`{source, confirm:true}`） | 切 `volume` → 200 `{ok:true, switchedFrom, switchedTo, changedAt}`；缺 `confirm` → 400 `invalid_input`（`details.field=confirm`）；`source` 非法 → 400（`details.field=source`）；收尾切回 `supabase` | 通过（P6 2a/2b/2c、7d、7h；smoke 56a1、56h1） |
+| 3 | `GET /api/setup/status` 的 `userSource` 字段 | volume 模式下断言 `next !== 'supabase'`、`userSource='volume'`、`checks.supabase=true`、`checks.supabaseRequired=false`，hint 不含 Supabase 字样 | 通过（P6 2d/2e；smoke 56a2） |
+| 4 | `POST /api/admin/users`（volume 本地建号） | body `{email, password, displayName?}` → 201 `item.source='local'`、`status='active'`、`registeredAt` 有值；email 唯一；密码 scrypt 落 `users.passwordHash`；审计 `user_create` | 通过（P6 3a；smoke 56b1） |
+| 5 | `POST /api/auth/login`（volume 本地校验） | 密码正确 → 200，会话 `local:true`、`accessToken/refreshToken=null`、7 天有效；`/api/me` 200；`lastLoginAt` 更新 | 通过（P6 3b/3c；smoke 56b2/56b3） |
+| 6 | `POST /api/admin/users/:id/password` | volume 模式改密 200，旧密码 401、新密码 200，审计 `user_password`；supabase 模式 → 409 `not_supported_in_source`（提示去 Supabase 侧改） | 通过（P6 7a/7b/7c/7e） |
+| 7 | `PATCH /api/admin/users/:id`（`status:active|banned`） | 封禁 → 200 `status='banned'` 且 `disabled` 同步为 true，审计 `user_ban`；解封 → `status='active'`，审计 `user_unban`；兼容老字段 `disabled` | 通过（P6 5b/6a；smoke 56d1、56e1） |
+| 8 | `DELETE /api/admin/users/:id?deleteFiles=0` | 仅删 `users` 行 + 附属记录（shares/share_hits/app_passwords/upload_sessions/traffic/用户级 binding），保留文件节点与对象；删号后既有 cookie `/api/me` 401/403（不 500）；审计 `user_delete`（`files:kept`） | 通过（P6 8c1/8c2；smoke 56g1/56g2） |
+| 9 | `DELETE /api/admin/users/:id?deleteFiles=1` | 清空该 email 全部 nodes（含回收站）→ 经现有存储驱动删物理对象与用户目录；返回 `{deletedFiles:{nodes,bytes}}`；他人文件仍可下载、不受影响；审计 `user_delete`（`files:deleted`） | 通过（P6 8d1/8d2/8e） |
+| 10 | Supabase 映射行删号（无 `passwordHash`） | 只删本地记录，响应 `supabaseUserKept:true` + 「Supabase 中的用户未被删除」；审计 detail 带 `supabase:kept` | 通过（手工构造无 hash 行实测，见 §10.5） |
+| 11 | 列表字段（抽屉消费） | `GET /api/admin/users` 每项含 `status`、`registeredAt`、`source`（`local`/`supabase`）、`lastLoginAt`（空值 `null`）；登录后 `registeredAt`/`lastLoginAt` 均为非空时间字符串 | 通过（P6 5a/9；smoke 56f） |
+| 12 | P1–P5 不回归 | 全新隔离库跑 `tools/smoke-test.mjs` | 通过，**72/72**（原 55 项 + 本段并入的 17 项 56x 系列）；独立脚本 `tools/test-p6-user-source.mjs` **39/39** |
+
+### 10.2 存储位置
+
+- 账号来源存在 SQLite **`settings` 表，key `userSource`**，取值 `"supabase"` | `"volume"`；缺省（无该行）= `"supabase"`，保持现网行为。切换时间存同表 key **`userSourceChangedAt`**。
+- 读写统一封装在 `server/services/user-source.js`（`getUserSource()` / `setUserSource(src)` / `isVolumeSource()` / `getSwitchedAt()` / `setSwitchedAt(iso)`），其它模块不散落写 SQL。
+- 本地密码 scrypt：格式 `scrypt$N$r$p$saltB64$hashB64`，salt 16B、hash 64B，`N=16384 r=8 p=1`。
+
+### 10.3 封禁让 session 立即失效的机制
+
+- `server/middleware/auth.js` 的 `resolveUser()` **每次请求都查库**取用户行，校验 `status === 'banned' || disabled === 1`，命中即 403 `account_banned`；不依赖会话过期。因此写上传、下载、分享、目录浏览等**所有走 `requireUser` 的路径**在封禁后下一次请求即被拦。
+- 会话带 `local:true`（或当前 `userSource==='volume'`）时跳过 Supabase access token 校验；用户行不存在仍 401 `unauthorized`。
+- WebDAV 不走 `requireUser`，在 `server/routes/dav.js` 的 `basicAuth()` 里**另外按 `status`/`disabled` 判封禁**，命中 403。
+- 封禁/解封同时写 `users.status` 与老列 `disabled`（两列同步，读取以 `status` 为准）。
+
+### 10.4 删号两选项行为差异
+
+| 选项 | 删了什么 | 保留什么 | 响应 |
+|---|---|---|---|
+| `deleteFiles=0` | `users` 行 + 附属记录（shares、share_hits、app_passwords、upload_sessions、traffic、用户级 storage binding） | 文件节点（`nodes` 行）与存储物理对象/目录 | `deletedFiles.nodes=0, bytes=0`；审计 `files:kept` |
+| `deleteFiles=1` | 上述全部 + 该 email 名下所有 nodes（含回收站）+ 经存储驱动删除的物理对象与用户目录 | 无（该账号文件清空） | `deletedFiles.{nodes,bytes}`；审计 `files:deleted` |
+
+- 无 `passwordHash` 的 Supabase 账号：**只删本地记录**，远端 Supabase 用户保留，响应 `supabaseUserKept:true`，message 说明「Supabase 中的用户未被删除」；审计 detail 带 `supabase:kept`。
+- 删号后 `users` 行消失，`resolveUser` 下次请求 401（被封禁则 403），实测不出现 500。
+
+### 10.5 凭证错误统一文案（安全设计）
+
+- volume 模式下「账号不存在」与「密码错误」对外**完全一致**：同一 HTTP 401、同一 code `invalid_credentials`、同一 message「邮箱或密码错误」，响应体逐字节相同，不通过 code/message/details 暴露账号是否存在。
+- 内部分流只体现在服务端日志与审计 detail：`local_no_user`（无此邮箱）/ `local_bad_password`（密码不符）；被封禁单独走 403 `account_banned`。
+- 沿用现有「IP+邮箱 5 次 / 10 分钟」内存限流，本地登录同样计数。
+
+### 10.6 未验证 / 沙箱限制（如实说明）
+
+| 项 | 原因 | 上线前怎么补 |
+|---|---|---|
+| 真实 Supabase 密码登录、access/refresh token 校验与续签、admin 建号、改密、远端用户保留 | 沙箱内无可用 Supabase 实例，`*.supabase.co` 不可达；supabase 分支只验证了「未配置时的行为」（412 保留、volume 跳过、409 分流） | 接真实 Supabase 项目跑一遍登录、后台建号、改密、删号后核对远端用户是否仍在 |
+| S3 / GitHub 绑定目录下删号清远端对象 | 本机只有 volume 与本地 `tools/fake-s3.mjs`；跨策略删对象复用现有驱动 `remove()`，未在真实 S3/MinIO 上验证目录级清理 | 接真实 S3 后对绑定目录下的用户删号，核对远端对象与前缀被清 |
+| 真实 scrypt 性能 / 跨版本会话兼容 | 仅在本机 Node 22 实测哈希与校验通过 | 生产压测下确认 scrypt `N=16384` 的登录耗时可接受 |
+

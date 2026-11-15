@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, getSetting } from '../db.js';
 import * as supabase from '../services/supabase.js';
 import { listEnabled } from '../services/storage/registry.js';
+import { getUserSource } from '../services/user-source.js';
 
 const router = Router();
 
@@ -21,7 +22,9 @@ function siteSettings() {
 }
 
 function evaluate() {
-  const sbConfigured = supabase.isConfigured();
+  const userSource = getUserSource();
+  const sbRequired = userSource !== 'volume';
+  const sbConfigured = sbRequired ? supabase.isConfigured() : true;
   const storageReady = listEnabled().length > 0;
   const groupCount = db.prepare('SELECT COUNT(*) AS n FROM groups').get().n;
   const groupsReady = groupCount >= 2;
@@ -37,7 +40,8 @@ function evaluate() {
   );
 
   let next = 'ready';
-  if (!sbConfigured) next = 'supabase';
+  // volume 模式跳过 Supabase 检查：不因未配 Supabase 卡在 'supabase'。
+  if (sbRequired && !supabase.isConfigured()) next = 'supabase';
   else if (!storageReady) next = 'storage';
   else if (!groupsReady) next = 'groups';
   else if (!siteReady) next = 'site';
@@ -54,8 +58,10 @@ function evaluate() {
     hint: HINTS[next],
     link: next === 'ready' ? '/login' : '/admin/login',
     linkLabel: next === 'ready' ? '前往登录' : '进入管理后台',
+    userSource,
     checks: {
       supabase: sbConfigured,
+      supabaseRequired: sbRequired,
       storage: storageReady,
       groups: groupsReady,
       site: siteReady,

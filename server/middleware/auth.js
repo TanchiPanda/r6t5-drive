@@ -1,16 +1,19 @@
 import { db } from '../db.js';
 import { readUserSession, readAdminSession, setUserCookie } from '../lib/session.js';
-import { unauthorized, forbidden } from '../lib/errors.js';
+import { unauthorized, forbidden, accountBanned } from '../lib/errors.js';
 import * as supabase from '../services/supabase.js';
 import { getUserByEmail, publicUser } from '../services/nodes.js';
 import { resolveGroup } from '../services/quota.js';
+import { isVolumeSource } from '../services/user-source.js';
 
 /** 校验用户会话；生产路径走 Supabase 校验 access token，过期用 refresh_token 续签。 */
 async function resolveUser(req) {
   const session = readUserSession(req, db);
   if (!session || !session.email) throw unauthorized('未登录');
 
-  if (!session.dev) {
+  // 本地账号会话（local:true）或当前站点已切到 volume 来源时，跳过 Supabase access token 校验。
+  const localSession = !!session.local || session.dev || isVolumeSource();
+  if (!localSession) {
     let validated = false;
     if (session.accessToken) {
       const res = await supabase.fetchUser(session.accessToken);
@@ -33,7 +36,9 @@ async function resolveUser(req) {
   const email = String(session.email).toLowerCase();
   const user = getUserByEmail(email);
   if (!user) throw unauthorized('账号不存在');
-  if (user.disabled) throw forbidden('账号已被禁用');
+  // 每次请求都查库校验封禁状态：被封禁立即让既有 session 失效（不依赖会话过期）。
+  // 读取以 status 为准，disabled 作为老列兜底；两列保持同步。
+  if (user.status === 'banned' || user.disabled === 1) throw accountBanned();
   req.user = user;
   req.sessionPayload = session;
   req.publicUser = publicUser(user, resolveGroup(user));

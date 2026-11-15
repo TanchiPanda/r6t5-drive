@@ -5,6 +5,9 @@ const VALID_ACTIONS = new Set([
   'login', 'logout', 'upload', 'download', 'delete', 'restore', 'rename', 'move',
   'mkdir', 'admin_login', 'settings_update', 'group_create', 'storage_create',
   'user_disable', 'share_create', 'share_revoke', 'compress', 'extract',
+  // P6 账号来源 / 本地账号管理
+  'user_ban', 'user_unban', 'user_delete', 'user_create', 'user_password',
+  'user_source_switch',
 ]);
 
 export function writeAudit({ email, action, target = null, bytes = null, ip = null, detail = null }) {

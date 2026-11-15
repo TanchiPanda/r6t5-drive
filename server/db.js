@@ -54,6 +54,27 @@ export function migrate() {
   if (!groupCols.includes('defaultStrategyId')) {
     db.exec('ALTER TABLE groups ADD COLUMN defaultStrategyId TEXT');
   }
+
+  // P6：本地账号体系。users 表加列（老库自动迁移，数据不丢）：
+  //  - passwordHash TEXT：scrypt 派生值，有值即本地账号；空 = Supabase 账号
+  //  - status TEXT NOT NULL DEFAULT 'active'：active | banned，与 disabled 同步
+  //  - registeredAt TEXT：注册/创建时间，老行用 createdAt 回填
+  const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+  if (!userCols.includes('passwordHash')) {
+    db.exec('ALTER TABLE users ADD COLUMN passwordHash TEXT');
+  }
+  if (!userCols.includes('status')) {
+    db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+    // 老库：按现有 disabled 回填 status（disabled=1 ⇔ banned）
+    db.prepare("UPDATE users SET status = CASE WHEN disabled = 1 THEN 'banned' ELSE 'active' END").run();
+  } else {
+    // 已存在 status 的库：保证两列一致（以 status 为准同步 disabled）
+    db.prepare('UPDATE users SET disabled = CASE WHEN status = ? THEN 1 ELSE 0 END').run('banned');
+  }
+  if (!userCols.includes('registeredAt')) {
+    db.exec('ALTER TABLE users ADD COLUMN registeredAt TEXT');
+    db.prepare('UPDATE users SET registeredAt = createdAt WHERE registeredAt IS NULL').run();
+  }
 }
 
 export function getSetting(key, fallback = null) {

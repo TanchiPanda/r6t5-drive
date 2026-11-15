@@ -66,7 +66,7 @@ function basicAuth(req, res, next) {
     const email = verifyAppPassword(cred);
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (!user) throw appPasswordInvalid('账号不存在');
-    if (user.disabled) throw forbidden('账号已被禁用');
+    if (user.status === 'banned' || user.disabled === 1) throw forbidden('账号已被封禁');
     req.user = user;
     next();
   } catch (e) {
