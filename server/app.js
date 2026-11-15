@@ -35,6 +35,10 @@ import officeRouter, { officePublicRouter } from './routes/office.js';
 import downloadsRouter from './routes/downloads.js';
 import integrationsRouter from './routes/integrations.js';
 import adminBrandingRouter from './routes/admin-branding.js';
+import adminMailRouter from './routes/admin-mail.js';
+import adminSecurityRouter from './routes/admin-security.js';
+import authConfirmRouter from './routes/auth-confirm.js';
+import authOauthRouter from './routes/auth-oauth.js';
 import { brandingApiRouter, brandingAssetRouter, manifestHandler } from './routes/branding-public.js';
 
 const app = express();
@@ -47,6 +51,8 @@ app.use(express.json({ limit: '2mb' }));
 // ---- 公开 / 自助接口 ----
 app.use('/api/setup', setupRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/auth/confirm', authConfirmRouter);
+app.use('/api/auth/oauth', authOauthRouter);
 app.use('/api/me', meRouter);
 // 用户端分享（需登录）与公开访问（免登录）分开挂载
 app.use('/api/shares', requireUser, sharesRouter);
@@ -72,6 +78,8 @@ adminApi.use('/audit', adminAuditRouter);
 adminApi.use('/trash', adminTrashRouter);
 adminApi.use('/shares', adminSharesRouter);
 adminApi.use('/branding', adminBrandingRouter);
+adminApi.use('/mail', adminMailRouter);
+adminApi.use('/security', adminSecurityRouter);
 app.use('/api/admin', adminApi);
 
 // 品牌外观：公开配置（登录页免登录读取）与品牌静态文件 / manifest

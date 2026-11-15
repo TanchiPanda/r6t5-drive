@@ -7,6 +7,7 @@ import { ApiError, badRequest, forbidden, storageError, shareCodeRequired, unaut
 import { getDriver } from '../services/storage/driver.js';
 import { getStrategy as getStrategyById } from '../services/storage/registry.js';
 import { sendPreview } from '../services/preview.js';
+import { requireConfirmed } from '../middleware/auth.js';
 import {
   createShare, listMyShares, getMyShare, revokeMyShare,
   loadActiveShare, publicMeta, unlockShare, unlockCookie,
@@ -26,7 +27,7 @@ userRouter.use((req, res, next) => {
   next();
 });
 
-userRouter.post('/', (req, res, next) => {
+userRouter.post('/', requireConfirmed, (req, res, next) => {
   try {
     const item = createShare(req.user, req.body || {});
     res.status(201).json({ item });

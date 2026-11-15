@@ -22,6 +22,7 @@ import * as registry from '../services/storage/registry.js';
 import { getDriver, driverCaps } from '../services/storage/driver.js';
 import { resolveStorage } from '../services/bindings.js';
 import { nowIso } from '../lib/format.js';
+import { requireConfirmed } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -195,7 +196,7 @@ router.post('/folder', async (req, res, next) => {
 });
 
 // ---- 上传 ----
-router.post('/upload', (req, res, next) => {
+router.post('/upload', requireConfirmed, (req, res, next) => {
   const email = req.user.email;
   let parentLogical;
   try {

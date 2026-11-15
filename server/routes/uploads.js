@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import * as chunks from '../services/chunks.js';
+import { requireConfirmed } from '../middleware/auth.js';
 
 const router = Router();
 
 // POST /api/uploads/init
-router.post('/init', (req, res, next) => {
+router.post('/init', requireConfirmed, (req, res, next) => {
   try {
     const view = chunks.initSession(req.user, req.body || {});
     res.status(201).json({

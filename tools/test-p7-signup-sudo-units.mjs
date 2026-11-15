@@ -287,6 +287,10 @@ let groupA, groupB;
     body: { maxFileSize: { value: '1', unit: 'MB' }, spaceLimit: { value: '10', unit: 'GB' }, traffic7dLimit: { value: '10', unit: 'GB' } },
   });
 
+  // P8-B：未配 SMTP 时自助注册落 pending_review，上传/分享会被 email_unconfirmed 守卫拦截。
+  // 本用例只测配额换算，直接在隔离库把该测试用户置 active（仅测试脚本适配，服务端守卫未放宽）。
+  db.prepare("UPDATE users SET status = 'active', disabled = 0 WHERE email = ?").run('reg-a@p7.test');
+
   // 2MB 文件 → 超限
   const bigChunk = new Uint8Array(2 * 1024 * 1024);
   const fd1 = new FormData(); fd1.append('file', new Blob([bigChunk]), 'big.bin');

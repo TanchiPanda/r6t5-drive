@@ -172,3 +172,17 @@ CREATE TABLE IF NOT EXISTS app_passwords (
 );
 
 CREATE INDEX IF NOT EXISTS idx_app_passwords_email ON app_passwords(email);
+
+-- 邮箱确认 / 找回密码一次性令牌（P8-B）
+-- kind='confirm'：注册邮箱确认；expiresAt 过期；usedAt 置位后不可复用
+CREATE TABLE IF NOT EXISTS email_tokens (
+  token     TEXT PRIMARY KEY,
+  email     TEXT NOT NULL,
+  kind      TEXT NOT NULL,
+  createdAt TEXT NOT NULL,
+  expiresAt TEXT NOT NULL,
+  usedAt    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_tokens_email ON email_tokens(email);
+CREATE INDEX IF NOT EXISTS idx_email_tokens_kind ON email_tokens(kind);

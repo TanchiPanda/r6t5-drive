@@ -10,6 +10,8 @@ const VALID_ACTIONS = new Set([
   'user_source_switch',
   // P7 自助注册 / sudo 用户组
   'signup', 'group_update',
+  // P8-B 邮箱确认 / 第三方登录
+  'email_confirm', 'oauth_login',
 ]);
 
 export function writeAudit({ email, action, target = null, bytes = null, ip = null, detail = null }) {

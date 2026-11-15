@@ -1,6 +1,6 @@
 import { db } from '../db.js';
 import { readUserSession, readAdminSession, setUserCookie } from '../lib/session.js';
-import { unauthorized, forbidden, accountBanned } from '../lib/errors.js';
+import { unauthorized, forbidden, accountBanned, emailUnconfirmed } from '../lib/errors.js';
 import * as supabase from '../services/supabase.js';
 import { getUserByEmail, publicUser } from '../services/nodes.js';
 import { resolveGroup } from '../services/quota.js';
@@ -82,6 +82,19 @@ export function resolveAdminAccess(req) {
     return { via: 'sudo', email, groupId: group.id, groupName: group.name };
   }
   return null;
+}
+
+/**
+ * P8-B 邮箱确认守卫：未 active（pending_email / pending_review）的用户
+ * 可登录、可看列表 / 下载 / 预览 / 删除，但禁止上传与建分享。
+ * 挂在上传 / 建分享路由前置；下载 / 预览 / 删除不挂。
+ */
+export function requireConfirmed(req, res, next) {
+  const user = req.user;
+  if (user && user.status && user.status !== 'active') {
+    return next(emailUnconfirmed({ status: user.status }));
+  }
+  next();
 }
 
 export function requireAdminApi(req, res, next) {

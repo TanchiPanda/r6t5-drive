@@ -106,7 +106,9 @@ export function fileCount(email) {
 }
 
 export function publicUser(user, group) {
-  const status = user.status === 'banned' || user.disabled === 1 ? 'banned' : 'active';
+  const KNOWN = ['active', 'banned', 'pending_email', 'pending_review'];
+  let status = KNOWN.includes(user.status) ? user.status : 'active';
+  if (user.disabled === 1) status = 'banned';
   return {
     id: user.id,
     email: user.email,

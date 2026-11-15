@@ -3,7 +3,8 @@ import { db } from '../db.js';
 import * as supabase from '../services/supabase.js';
 import { upsertUser, usedBytesOf, fileCountOf } from '../services/user-helpers.js';
 import { writeAudit } from '../services/audit.js';
-import { badRequest, notFound, conflict, notSupportedInSource } from '../lib/errors.js';
+import { badRequest, notFound, conflict, notSupportedInSource, ApiError } from '../lib/errors.js';
+import { checkEmailAllowed } from '../services/signup-policy.js';
 import { nowIso, genId } from '../lib/format.js';
 import {
   isVolumeSource, hashLocalPassword,
@@ -22,14 +23,17 @@ function groupName(groupId) {
   return g?.name || '';
 }
 
+const KNOWN_STATUS = ['active', 'banned', 'pending_email', 'pending_review'];
+
 function statusOf(u) {
   // 读取以 status 为准，disabled 作为老列兜底
   if (u.status === 'banned' || u.disabled === 1) return 'banned';
-  return 'active';
+  return KNOWN_STATUS.includes(u.status) ? u.status : 'active';
 }
 
 function serialize(u) {
   const status = statusOf(u);
+  const confirmRequired = status === 'pending_email' || status === 'pending_review';
   return {
     id: u.id,
     email: u.email,
@@ -38,6 +42,7 @@ function serialize(u) {
     groupName: groupName(u.groupId),
     disabled: status === 'banned',
     status,
+    confirmRequired,
     source: u.passwordHash ? 'local' : 'supabase',
     registeredAt: u.registeredAt || u.createdAt || null,
     createdAt: u.createdAt,
@@ -79,6 +84,8 @@ router.post('/', async (req, res, next) => {
     const body = req.body || {};
     const normalized = String(body.email || '').toLowerCase();
     if (!EMAIL_RE.test(normalized)) throw badRequest('invalid_input', '邮箱格式不正确', { field: 'email' });
+    const policy = checkEmailAllowed(normalized);
+    if (!policy.ok) throw new ApiError(400, policy.code, policy.message);
     if (!body.password || String(body.password).length < 6) {
       throw badRequest('invalid_input', '密码至少 6 位', { field: 'password' });
     }
@@ -135,6 +142,23 @@ router.post('/:id/password', (req, res, next) => {
     const passwordHash = hashLocalPassword(String(password));
     db.prepare('UPDATE users SET passwordHash = ? WHERE id = ?').run(passwordHash, u.id);
     writeAudit({ email: u.email, action: 'user_password', detail: 'admin-reset' });
+    res.json({ ok: true, item: serialize(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)) });
+  } catch (e) { next(e); }
+});
+
+// 管理员手动确认邮箱：pending_* → active；banned 不可借此解封。
+router.post('/:id/confirm', (req, res, next) => {
+  try {
+    const u = findUser(req.params.id);
+    if (!u) throw notFound('用户不存在');
+    if (u.status === 'banned' || u.disabled === 1) {
+      throw new ApiError(409, 'invalid_input', '封禁账号不能通过确认解封，请先解封');
+    }
+    if (u.status === 'active') {
+      return res.json({ ok: true, alreadyActive: true, item: serialize(u) });
+    }
+    db.prepare('UPDATE users SET status = ?, disabled = 0 WHERE id = ?').run('active', u.id);
+    writeAudit({ email: u.email, action: 'email_confirm', detail: 'manual' });
     res.json({ ok: true, item: serialize(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)) });
   } catch (e) { next(e); }
 });

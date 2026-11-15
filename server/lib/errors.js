@@ -34,6 +34,18 @@ export const signupRateLimited = (details) =>
   new ApiError(429, 'rate_limited', '注册尝试过多，请稍后再试', details || {});
 export const notSupportedInSource = (message, details) =>
   new ApiError(409, 'not_supported_in_source', message || '当前账号来源不支持该操作', details || {});
+
+// ---- P8-B 注册策略 / 邮箱确认 / 验证码 ----
+export const signupDomainNotAllowed = (details) =>
+  new ApiError(400, 'signup_domain_not_allowed', '该邮箱域名不在允许列表内', details || {});
+export const signupDomainBlocked = (details) =>
+  new ApiError(400, 'signup_domain_blocked', '该邮箱域名已被封禁', details || {});
+export const signupSubAddressForbidden = (details) =>
+  new ApiError(400, 'signup_subaddress_forbidden', '不允许使用带 + 子地址的邮箱', details || {});
+export const emailUnconfirmed = (details) =>
+  new ApiError(403, 'email_unconfirmed', '邮箱未确认，暂时无法上传或分享', details || {});
+export const captchaFailed = (details) =>
+  new ApiError(400, 'captcha_failed', '人机验证未通过，请重试', details || {});
 export const notImplemented = (message = '该能力在 P2 规划中') =>
   new ApiError(501, 'not_implemented', message);
 export const storageError = (message = '磁盘/适配器错误', details) =>

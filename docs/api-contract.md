@@ -959,3 +959,361 @@ LIMIT 1
 ```
 
 - `hasUpdate` 判定：远端 `version` 与本地 `VERSION` **字符串不等**即 true（构建号不是语义化版本，不做大小比较）。
+
+## §P8-1 品牌与站点外观
+
+### 配置 key（`settings` 表，全部可空 = 回落默认静态资源）
+
+| settings key | 对应 slot / 字段 | 回落默认 |
+|---|---|---|
+| `brand.logoLightUrl` | `logoLightUrl` / `logoLight` | `/assets/favicon.svg` |
+| `brand.logoDarkUrl` | `logoDarkUrl` / `logoDark` | `/assets/icons/favicon.svg` |
+| `brand.faviconUrl` | `faviconUrl` / `favicon` | `/assets/favicon.svg` |
+| `brand.icon192Url` | `icon192Url` / `icon192` | `/assets/icons/favicon.svg` |
+| `brand.iconLargeUrl` | `iconLargeUrl` / `iconLarge` | `/assets/icons/favicon.svg` |
+| `brand.sidebarHtml` | `sidebarHtml`（落库前已清洗） | `null`（不渲染） |
+
+品牌上传文件落在 `data/branding/`（目录取 `path.dirname(ENV.DB_PATH)` 下的 `branding/`，`mkdirSync recursive`；`DB_PATH` 指向 `/tmp` 时品牌文件随之隔离）。对外 URL 统一为本站相对路径 `/branding/<slot>-<hash8>.<ext>`。
+
+### 管理端接口（挂在 `/api/admin/branding`，管理员密码会话或 sudo 会话）
+
+- `GET /api/admin/branding` →
+  `{ logoLightUrl, logoDarkUrl, faviconUrl, icon192Url, iconLargeUrl, sidebarHtml, sidebarHtmlSanitized, defaults:{...是否回落}, updatedAt }`。
+- `PATCH /api/admin/branding`：body 支持上述 5 个 URL 字段 + `sidebarHtml`（可只传部分）。
+  - URL 字段必须是 `http(s)://` 或本站根相对路径 `/` 开头（拒绝 `//` 协议相对）；长度 > 512 拒绝。
+  - `sidebarHtml` 落库前过白名单清洗；响应 `item.sidebarHtml` 为清洗后串，`sidebarHtmlRaw` 为原始串（便于前端提示「部分内容已移除」）。
+  - 写审计 `settings_update`，detail `branding:<patch|upload:<slot>|clear:<slot>>`。
+- `POST /api/admin/branding/upload?slot=logoLight|logoDark|favicon|icon192|iconLarge`：multipart 单文件字段 `file`。
+  - 允许扩展名 `svg / png / ico`；**大小上限 512KB**，超限 413 `payload_too_large`。
+  - **文件头（magic）校验**，不只信扩展名 / mimetype：
+    - PNG：头 `89 50 4E 47`；
+    - ICO：头 `00 00 01 00`；
+    - SVG：内容必须能解析出 `<svg`，且不能是 `<!doctype html>` / `<html>` 伪装文档。
+  - 扩展名与 magic 不一致 → 400 `invalid_input`。成功 201 `{ ok:true, url, slot }` 并写回对应 settings key。
+- `DELETE /api/admin/branding/:slot`：清空该 slot（回落默认），返回 `{ ok:true, item }`。
+
+### 公开接口（免登录）
+
+- `GET /api/branding` → `{ siteName, logoLightUrl, logoDarkUrl, faviconUrl, icon192Url, iconLargeUrl, sidebarHtml }`；`sidebarHtml` 为清洗后版本，无配置时各字段为 `null`，前端自行回落默认资源。
+- `GET /branding/:name`：服务 `data/branding/` 下文件；禁止路径穿越（拒绝 `..`、`/`、`\`），越界 404。
+- `GET /branding/favicon`：有配置 302 到配置值，否则 302 到 `/assets/favicon.svg`。
+- `GET /branding/logo-light`：有配置 302 到 `logoLightUrl`，否则 302 到 `/assets/favicon.svg`。
+- `GET /branding/logo-dark`：有配置 302 到 `logoDarkUrl`，否则 302 到 `/assets/icons/favicon.svg`。
+- `GET /manifest.webmanifest`（`application/manifest+json`）：`name/short_name` 取 `siteName`，`start_url:"/"`，`display:"standalone"`，`background_color:#0e1512`、`theme_color:#4a9e6e`（tokens.css 深色主色）；`icons` 含 192 / 512 两条，src 取 `icon192Url`/`iconLargeUrl`（互为兜底，再回落默认），size 字段按 192 / 512 布局标注。
+
+### 侧边栏 HTML 清洗规则（`server/lib/html-sanitize.js`，前端 `R6T5.sanitizeSidebarHtml` 同规则双保险）
+
+- 允许标签白名单：`p br strong em a span img h3 h4 ul li`。
+- 整体移除危险标签及其内容：`script iframe object embed style form link meta`。
+- 剔除所有 `on*` 事件属性与 `style` 属性；非白名单属性一律丢弃。
+- `a[href]`：仅允许 `http(s)://`，否则剔除该链接（保留文本）。
+- `img[src]`：允许 `http(s)://` 且域名在白名单（`raw.githubusercontent.com`、`*.githubusercontent.com`、`*.doubaocdn.com`），或本站根相对路径 `/...`；**一律拒绝** `data:`、`javascript:`、`blob:`、`vbscript:` 与协议相对 `//`；无合法 src 的 `img` 整体剔除。
+- 白名单域名后缀常量集中在 `ALLOWED_IMG_HOST_SUFFIXES`（前端 `BRAND_IMG_SUFFIXES`），可配。
+
+### 错误码
+
+| 状态 | code | 场景 |
+|---|---|---|
+| 400 | `invalid_input` | 未知 slot / 空文件 / 扩展名不允许 / magic 与扩展名不一致 / SVG 缺 `<svg` 或为 HTML 伪装 / URL 非法协议或非本站路径 |
+| 400 | `invalid_input` | URL 长度 > 512 |
+| 413 | `payload_too_large` | 上传文件 > 512KB |
+| 401 | `unauthorized` | 未登录访问 `/api/admin/branding` |
+
+## §P8-2 注册策略 / SMTP / 邮箱确认 / 验证码 / 第三方登录
+
+### 配置 key（`settings` 表）
+
+**注册策略**
+
+| key | 取值 | 说明 |
+|---|---|---|
+| `signup.allowDomains` | 逗号 / 换行分隔域名列表 | 非空时只允许命中其中一条；`example.com` 精确匹配，`*.example.com` 匹配 apex 与任意一级子域；大小写不敏感 |
+| `signup.denyDomains` | 同上 | 黑名单，**优先于白名单**命中即拒 |
+| `signup.forbidSubAddress` | `'true'` / `'false'` | `'true'` 拒绝本地部分含 `+` 的子地址邮箱（如 `a+b@x.com`） |
+
+**SMTP**
+
+| key | 默认 | 说明 |
+|---|---|---|
+| `smtp.host` | — | SMTP 主机；为空视为未配置 |
+| `smtp.port` | `587` | 端口号 |
+| `smtp.username` | — | 账号；为空则跳过 AUTH |
+| `smtp.password` | — | 密码；只落库，管理接口回显脱敏，绝不下发明文 |
+| `smtp.secure` | `'false'` | `'true'` 隐式 TLS（直连 `tls.connect`，常见 465）；`'false'` 先明文 EHLO，支持 STARTTLS 则升级，不支持则明文回落 |
+| `smtp.fromName` | — | 发信显示名（非 ASCII 走 RFC2047 编码） |
+| `smtp.fromEmail` | — | 发信地址；与 host 共同判定 `configured` |
+| `smtp.replyTo` | — | 回复地址；联系邮箱回落顺序 `replyTo → fromEmail → null` |
+| `smtp.connTimeoutMs` | `10000` | 连接 / 读取超时（毫秒，下限 1000） |
+
+**验证码（Turnstile 为主，预留 hCaptcha / reCAPTCHA）**
+
+| key | 说明 |
+|---|---|
+| `captcha.provider` | `turnstile` / `hcaptcha` / `recaptcha` |
+| `captcha.siteKey` | 前端公开站点 key（可下发） |
+| `captcha.secretKey` | 服务端密钥（**永不下发**） |
+| `captcha.onLogin` / `captcha.onSignup` / `captcha.onRecover` | `'true'` / `'false'`，各场景独立开关 |
+
+**第三方登录（授权码流）**
+
+| key | 说明 |
+|---|---|
+| `oauth.qq.appId` / `oauth.qq.appKey` | QQ 互联 |
+| `oauth.logto.issuer` / `oauth.logto.clientId` / `oauth.logto.clientSecret` | Logto（复用 OIDC Discovery） |
+| `oauth.oidc.issuer` / `oauth.oidc.clientId` / `oauth.oidc.clientSecret` / `oauth.oidc.scope` | 通用 OIDC |
+| `oauth.redirectBase` | 回调基址；为空取请求 `origin` |
+
+### 接口表
+
+**公开（免登录）**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/auth/security-config` | 返回 `{ captcha:{provider,siteKey,onLogin,onSignup,onRecover}, signup:{forbidSubAddress,hasAllowList,hasDenyList} }`；**不含 secret** |
+| GET | `/api/auth/confirm?token=xxx` | 邮箱确认结果页（HTML）。成功：用户置 `active`、令牌 `usedAt` 落库、写审计 `email_confirm`(detail=`link`)；失败：HTML「链接已失效」+ 联系邮箱（`replyTo → fromEmail`，无则「请联系站点管理员」），带复制邮箱按钮（`navigator.clipboard` + select 降级） |
+| GET | `/api/auth/oauth/providers` | 仅列已配置 provider：`{ providers:[{id,label,startUrl}] }` |
+| GET | `/api/auth/oauth/:provider/start` | 302 到授权页；`state` 签名存 HttpOnly Cookie。未配置 → 503 `integration_not_configured` |
+| GET | `/api/auth/oauth/:provider/callback` | 换 token → 取 userinfo → 不存在则按注册策略建号（第三方邮箱视为已验证，直接 `active`）→ 建会话 → 302 `/files`；state 不符 400 HTML |
+
+**管理端（挂 `/api/admin`，需管理员会话或 sudo）**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/admin/mail` | SMTP 脱敏快照：`configured,host,port,username,secure,fromName,fromEmail,replyTo,connTimeoutMs,contactEmail,passwordSet,passwordMasked`；密码只回 `****` + 末 2 位 |
+| PATCH | `/api/admin/mail` | 部分更新；`password` 传空串 = 不修改，传新值 = 覆盖。写审计 `settings_update`(detail=`mail`) |
+| POST | `/api/admin/mail/test` | body `{to}`，真发一封测试邮件；成功 `{ok,code,response}`，失败 502 `upstream_error` 且 `details.smtpCode` 存在 |
+| GET | `/api/admin/security` | 注册策略 + 验证码配置 + 各 provider `active/configured/disabledReason` + `smtp.configured` |
+| PATCH | `/api/admin/security` | 部分更新策略 / 验证码；`secretKey` 空串不修改。写审计 `settings_update`(detail=`security`) |
+| POST | `/api/admin/users/:id/confirm` | 管理员手动确认：`pending_* → active`，写审计 `email_confirm`(detail=`manual`)；已 `active` 幂等 200；`banned` 不可借此解封 → 409 `invalid_input` |
+
+**用户端补充**
+
+- `GET /api/me` 响应带 `status` 与 `confirmEmail:{configured,sent,contactEmail}`，供前端渲染「待确认」页。
+- `GET /api/admin/users` 每项补 `confirmRequired:boolean`（`pending_email` / `pending_review` 为 true）。
+
+### 用户状态机
+
+```
+                注册（配了 SMTP）
+   新用户 ───────────────────────▶ pending_email ──确认链接/管理员确认──▶ active
+     │                                      │
+     └──────── 注册（未配 SMTP）────────▶ pending_review ──管理员确认──▶ active
+                                                                    ▲
+   任意状态 ──封禁──▶ banned；解封 ──▶ active（banned 不能被邮箱确认解封）
+```
+
+- `active`：完整功能。
+- `pending_email` / `pending_review`：**可登录、可看列表 / 下载 / 预览 / 删除**；禁止上传（`POST /api/files/upload`、`POST /api/uploads/init`）与建分享（`POST /api/shares`），拦截返回 403 `email_unconfirmed`，`details.status` 为当前状态。
+- 邮箱确认令牌：32 字节 base64url，`kind='confirm'`，**24h** 有效，一次性（`usedAt` 置位后不可复用）；落 `email_tokens` 表。
+
+### 错误码
+
+| 状态 | code | 场景 |
+|---|---|---|
+| 400 | `signup_domain_not_allowed` | 邮箱域名不在白名单内 |
+| 400 | `signup_domain_blocked` | 邮箱域名命中黑名单 |
+| 400 | `signup_subaddress_forbidden` | 子地址开关开启且本地部分含 `+` |
+| 403 | `email_unconfirmed` | 未确认用户尝试上传 / 建分享 |
+| 400 | `captcha_failed` | 验证码缺失 / 被站点验票拒绝（`details.reason`） |
+| 503 | `integration_not_configured` | 第三方登录 provider 未配置 |
+| 502 | `upstream_error` | SMTP 发信上游错误（`details.smtpCode`） |
+
+### SMTP 传输安全判定与明文风险
+
+- `smtp.secure='true'`：直连隐式 TLS（`tls.connect`）。
+- `smtp.secure='false'`：明文连接先 EHLO；服务端 EHLO 通告 `STARTTLS` 且端口非 465 时升级 TLS，升级后重发 EHLO；**服务端不支持 STARTTLS（非 220）或端口 465 以外保持明文**。
+- **明文风险**：回落明文时账号 / 密码 / 邮件内容在网络上可被嗅探；生产环境请使用支持 TLS 的端口（465 `secure=true`，或 587 STARTTLS），不要在明文链路上传敏感邮箱密码。
+- 认证：优先 `AUTH PLAIN`，回落 `AUTH LOGIN`；服务端两者都不支持则报错。
+
+### 第三方登录说明与未验证声明
+
+- QQ 互联不返回邮箱，按约定用 `<openid>@qq.local` 作为本地账号邮箱（非真实投递地址）；该账号在提供商侧已验证 openid，本站直接视为已确认。
+- 通用 OIDC / Logto：走 Discovery（`<issuer>/.well-known/openid-configuration`）→ 授权码换 token → userinfo；`id_token` 校验 `iss` / `aud` / `exp` 声明。**JWKS 签名验签本期未实现**（零依赖约束），仅做声明级校验；上线接真实提供商前应补 JWKS 验签。
+- **未验证（沙箱限制）**：QQ 互联 / Logto / 通用 OIDC 的真实授权码交换、userinfo 拉取、回调建号链路均未在沙箱联调；`server/services/oauth/*` 仅按各平台文档实现，需接真实应用复测。
+
+### 挂载点（整合 `server/app.js` 时参考，本轮未改 `app.js`）
+
+```js
+// 公开 / 自助（与现有 authRouter 同级）
+app.use('/api/auth/confirm', authConfirmRouter);
+app.use('/api/auth/oauth', authOauthRouter);
+// adminApi 守卫内
+adminApi.use('/mail', adminMailRouter);
+adminApi.use('/security', adminSecurityRouter);
+// 注：/api/auth/security-config 挂在现有 authRouter 内，无需单独挂载
+```
+
+## §P9-C 积分 / 商店 / 兑换码 / 付费分享
+
+> 本节先于实现落地（C 批开工前的唯一字段口径），后端与前端都以此为准；实现落地后如与代码不符，**改代码对齐本节**，不反向改本节。
+
+### C-1 数据表（SQLite，列名 camelCase，与现有表一致；金额单位=货币最小单位，整数）
+
+```sql
+-- 积分流水：余额由本表 SUM(delta) 汇总，不单独建余额列
+CREATE TABLE IF NOT EXISTS points_ledger (
+  id          TEXT PRIMARY KEY,       -- pl_<16>
+  email       TEXT NOT NULL,
+  delta       INTEGER NOT NULL,      -- 正=入账，负=出账
+  balanceAfter INTEGER,             -- 写入时的汇总值（展示用，不参与计算）
+  source      TEXT NOT NULL,         -- purchase | redeem | commission | share_spend | refund | admin_adjust | signup_bonus
+  refType     TEXT,                  -- order | redeem_code | share | null
+  refId       TEXT,
+  note        TEXT,
+  createdAt   TEXT NOT NULL
+);
+-- source 与 refType 组合约束见 C-4「流水来源枚举」
+
+CREATE TABLE IF NOT EXISTS products (
+  id           TEXT PRIMARY KEY,     -- pr_<16>
+  name         TEXT NOT NULL,
+  tag          TEXT,                 -- 「热门」「推荐」等角标
+  description  TEXT,
+  type         TEXT NOT NULL,        -- storage_pack | group_upgrade
+  storageBytes TEXT,                 -- storage_pack 必填，十进制字符串（EB 上限同 §P7-3）
+  durationDays INTEGER NOT NULL DEFAULT 0,  -- 0=永久；group_upgrade 必填 >0（会员时长）
+  groupId      TEXT,                 -- group_upgrade 必填：目标组
+  priceMinor   INTEGER NOT NULL,     -- 现金价（最小单位）
+  pointsPrice  INTEGER,              -- 积分价；null=不支持积分购买
+  allowPoints  INTEGER NOT NULL DEFAULT 1,
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  sort         INTEGER NOT NULL DEFAULT 0,
+  createdAt    TEXT NOT NULL,
+  updatedAt    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id           TEXT PRIMARY KEY,     -- od_<16>
+  orderNo      TEXT NOT NULL UNIQUE, -- 对外订单号 R6-<YYYYMMDD>-<6位>，给用户看的
+  email        TEXT,                 -- 买家邮箱；匿名现金下单需要（收凭证邮件）
+  productId    TEXT,
+  shareToken   TEXT,                 -- 付费分享现金下单时填分享 token
+  amountMinor  INTEGER NOT NULL DEFAULT 0,
+  currency     TEXT NOT NULL DEFAULT 'CNY',
+  pointsUsed   INTEGER NOT NULL DEFAULT 0,
+  status       TEXT NOT NULL,        -- pending | paid | cancelled | refunded
+  channel      TEXT NOT NULL,        -- manual | points | cash
+  provider     TEXT NOT NULL DEFAULT 'manual',  -- manual | points | cash | stripe(未实现)
+  recoverToken TEXT,                 -- 现金订单恢复凭证（32B base64url，只在建单时下发一次）
+  providerRef  TEXT,                 -- 支付渠道单号（manual 为空）
+  paidAt       TEXT, refundedAt TEXT, cancelledAt TEXT, expiresAt TEXT,
+  note         TEXT,
+  createdAt    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS redeem_codes (
+  code         TEXT PRIMARY KEY,     -- 统一大写、去空格；生成时排除易混字符
+  type         TEXT NOT NULL,        -- storage | points | group
+  storageBytes TEXT,                 -- type=storage
+  points       INTEGER,              -- type=points
+  durationDays INTEGER,              -- type=group（会员时长，天）
+  groupId      TEXT,                 -- type=group 目标组
+  batchId      TEXT NOT NULL,        -- 同一次批量生成共享
+  maxUses      INTEGER NOT NULL DEFAULT 1,
+  usedCount    INTEGER NOT NULL DEFAULT 0,
+  boundEmail   TEXT,                 -- 非空则只能该邮箱兑换
+  expiresAt    TEXT,                 -- null=永不过期
+  status       TEXT NOT NULL DEFAULT 'active',  -- active | disabled | deleted
+  createdBy    TEXT, lastUsedAt TEXT, createdAt TEXT NOT NULL
+);
+
+-- shares 表新增（ALTER TABLE ADD COLUMN，迁移时补列）
+-- paidDownload INTEGER NOT NULL DEFAULT 0
+-- pricePoints  INTEGER            -- 积分价，>0 才生效
+```
+
+### C-2 settings key（全部存 `settings` 表键值文本）
+
+| key | 类型/取值 | 默认 | 说明 |
+|---|---|---|---|
+| `billing.pointsPerMinorUnit` | 整数字符串 | `1` | 每 1 个货币最小单位兑换多少积分（充值/现金抵扣口径） |
+| `billing.commissionPercent` | `1`–`100` | `10` | 付费分享成交后给分享者的佣金比例（积分） |
+| `billing.allowAnonymousPurchase` | `'true'`/`'false'` | `'true'` | 未登录是否可现金下单购买分享/商品 |
+| `billing.storeNavEnabled` | `'true'`/`'false'` | `'false'` | 用户端边栏是否显示「商店」入口 |
+| `billing.overQuotaGraceDays` | 整数天 | `7` | 容量包到期/降级后超额缓冲期，期内不硬拦上传（仅提示） |
+| `billing.cronNotifyExpr` | 表达式 | `'0 9 * * *'` | 通知 Cron（支持 `@every 1h` 与标准 5 段 cron） |
+| `billing.cronBanExpr` | 表达式 | `'@every 1h'` | 到期降级/封禁检查 Cron |
+| `billing.notifyOnExpireDays` | 整数天 | `3` | 会员到期前几天发通知 |
+
+### C-3 接口（`/api/...`，除标注外都需要登录会话）
+
+**用户端**
+| 方法/路径 | 说明 |
+|---|---|
+| `GET /api/store/products` | 已启用商品列表（按 sort,createdAt）；含 `pointsPrice`、`canPayPoints` |
+| `GET /api/store/me` | `{ points, groupId, groupName, groupExpiresAt, spaceLimitBytes, storeNavEnabled, allowAnonymousPurchase, commissionPercent }` |
+| `POST /api/store/orders` | body `{ productId }` → 建 `channel:'manual'` 订单，返回 `{ orderNo, amountMinor, payInstructions }` |
+| `POST /api/store/orders/:orderNo/pay-points` | 用积分买商品：校验积分足够 → 扣分写流水、`status='paid'`、发放权益（容量/换组） |
+| `POST /api/store/redeem` | body `{ code }` → 兑换，返回 `{ type, granted }` |
+| `GET /api/store/redeem/:code/preview` | 只校验不兑换（展示类型/额度/是否可用）|
+| `GET /api/shares/:token/pay-info`（免登录） | `{ paidDownload, pricePoints, requiresPayment, self, alreadyPurchased }` |
+| `POST /api/shares/:token/buy-points` | 积分购买分享：扣买家、按 `commissionPercent` 给分享者写 `commission` 流水；**禁止自己买自己** |
+| `POST /api/shares/:token/orders`（免登录可用） | body `{ email }` 现金下单：返回 `{ orderNo, recoverToken, contactEmail, mailSent }` |
+| `GET /api/orders/:orderNo`（免登录，需 `?recover=<token>`） | 订单状态查询（凭证不对返回 404）|
+
+**管理端**（`/api/admin`，管理员密码会话或 sudo）
+| 方法/路径 | 说明 |
+|---|---|
+| `GET/POST /api/admin/store/products`、`PATCH/DELETE /api/admin/store/products/:id` | 商品 CRUD（DELETE 软删 `enabled=0`）|
+| `GET /api/admin/store/orders?status=&channel=&email=` | 订单列表 |
+| `POST /api/admin/store/orders/:id/mark-paid` | **manual 渠道**人工标记已支付：发放权益 + 写订单流水（审计 `order_mark_paid`）|
+| `POST /api/admin/store/orders/:id/refund` | 退款：`status='refunded'`；积分单按 `-pointsUsed` 回滚并回收权益（容量减回、会员到期回退）|
+| `POST /api/admin/store/orders/:id/cancel` | 仅 `pending` 可取消 |
+| `GET/POST /api/admin/store/redeem-codes` | 列表 / 批量生成（`{ count, prefix, type, storageBytes?, points?, durationDays?, groupId?, maxUses, expiresAt?, boundEmail? }`）|
+| `PATCH /api/admin/store/redeem-codes/:code` | 禁用（`status='disabled'`）|
+| `DELETE /api/admin/store/redeem-codes/:code` | 删除（`status='deleted'`，不可再兑换）|
+| `GET /api/admin/store/redeem-codes/export.csv` | CSV 导出（`code,type,额度,有效期,次数,状态`）|
+| `GET /api/admin/points/ledger?email=&source=&limit=` | 流水查询 |
+| `POST /api/admin/points/adjust` | body `{ email, delta, note }` 手工调账（审计 `points_adjust`）|
+| `GET/PATCH /api/admin/store/settings` | C-2 的 billing 设置（PATCH 只传部分）|
+| `GET /api/admin/store/cron` | 两个 Cron 表达式与最近一次执行时间/结果 |
+
+### C-4 支付抽象
+
+```js
+// server/services/payment/index.js
+export const PaymentProvider = {
+  id: 'manual',
+  createOrder({ order }) -> { orderNo, status:'pending', payInstructions, providerRef? }
+  verifyCallback({ req })  -> { ok, orderNo, paidAmount } | throw
+  refund({ order, amountMinor }) -> { ok, refundedAmount }
+};
+export function getProvider(id) // 未知/未配置的 provider 返回 { id, implemented:false, ...三个方法一律抛 notConfigured }
+```
+
+- 本期只实现 `manual`：建单 → `pending`；管理员 `mark-paid` 才 `paid`；`refund` 由管理员触发。
+- `stripe` 等在线渠道有占位实现，**三个方法都返回错误 `payment_not_configured`**（HTTP 501），绝不返回“成功”。
+- 任何自动化流程（Cron、重试、回调）**不得**把订单置为 `paid`。
+
+### C-5 权益发放与到期
+
+- `storage_pack`：写 `user_quotas`/等效结构（依现有实现：容量加成记 `storage_grants` 表 `email, bytes, expiresAt, orderId`），`bytes` 用十进制字符串，`expiresAt=null` 表示永久；配额计算 = 组配额 + 未过期加成之和（BigInt）。
+- `group_upgrade`：切到 `products.groupId`，记 `groupExpiresAt = now + durationDays`（存 `users.groupExpiresAt` 或 `group_memberships` 表），到期由 Cron 检查：`groupExpiresAt <= now` → 回默认组（`settings.defaultGroupId`）并把 `groupExpiresAt` 清空，写审计 `group_expired`。
+- 到期前 `notifyOnExpireDays` 天写通知（站内 `notifications` 表或 audit `expire_notice`，二选一按实现）。
+
+### C-6 错误码（新增，`server/lib/errors.js` 统一注册）
+
+| code | HTTP | 触发 |
+|---|---|---|
+| `insufficient_points` | 400 | 积分不足（details 带 `required/available`）|
+| `points_disabled` | 400 | 商品 `allowPoints=0` 或 `pointsPrice=null` 却用积分支付 |
+| `product_disabled` | 400 | 商品 `enabled=0` 或不存在 |
+| `order_not_pending` | 409 | 对非 `pending` 订单做 `pay-points`/`mark-paid`/`cancel` |
+| `order_already_paid` | 409 | 重复标记已支付 |
+| `order_not_found` | 404 | 订单号不存在或凭证不匹配（对外统一 404，不泄露存在性）|
+| `redeem_code_invalid` | 400 | 兑换码不存在/已删除 |
+| `redeem_code_disabled` | 400 | `status='disabled'` |
+| `redeem_code_expired` | 400 | `expiresAt < now` |
+| `redeem_code_exhausted` | 400 | `usedCount >= maxUses` |
+| `redeem_code_email_mismatch` | 400 | `boundEmail` 与当前用户不符 |
+| `redeem_code_already_used` | 409 | `maxUses=1` 且当前用户已用过（details 带 `usedAt`）|
+| `share_not_paid` | 402 | 访问未购买的付费分享内容 |
+| `self_purchase_forbidden` | 400 | 自己买自己的分享 |
+| `anonymous_purchase_disabled` | 400 | `allowAnonymousPurchase=false` 时未登录下单 |
+| `payment_not_configured` | 501 | 调用了未实现的 PaymentProvider 方法 |
+
+### C-7 数值口径
+
+- 所有积分/金额/字节运算：积分与金额为 **整数**（SQLite INTEGER，安全上限同 int64）；字节一律十进制字符串 + BigInt（§P7-3 `server/lib/bytes.js`）。
+- 余额查询：`SELECT COALESCE(SUM(delta),0) FROM points_ledger WHERE email=?`，写流水与发权益必须在**同一事务**里。
+- 佣金：`floor(pricePoints * commissionPercent / 100)`，四舍五入不用银行家舍入；佣金为 0 时也写一条 delta=0 的 `commission` 流水（可审计）。

@@ -366,3 +366,108 @@ PREVIEW_BASE=http://127.0.0.1:8090 node tools/test-p3-preview.mjs # 14/14（脚�
 | 分布式注册限流 | 令牌桶为单进程内存 Map，不跨实例/不共享；多副本部署下各实例独立计数 | 接 Redis 等共享存储做跨实例令牌桶 |
 | 真实 `docker compose` 升级 | 未在本机执行 `docker compose pull && docker compose up -d`；升级命令来自 `latest.json.upgradeCommand` | 推送 `latest.json` 到远端后，在目标环境实跑升级并核对版本号切换 |
 | 远端 `latest.json` 可拉取 | 沙箱内 `raw.githubusercontent.com/.../main/latest.json` 返回 404（`checked:false, reason:http_404`）；需推送后远端才可拉，`checked:true` 分支（`latest.upgradeCommand`、`hasUpdate` 比较）未在沙箱命中 | 推送 `latest.json` 后复测 `checked:true` 路径 |
+
+## 12. P8-A：品牌与站点外观（实测）
+
+### 12.1 逐项结果（实测）
+
+| # | 能力 | 规则 | 结果 | 证据 |
+|---|---|---|---|---|
+| 1 | 公开品牌配置 `GET /api/branding`（免登录） | 初始各资源位 `null`、`siteName` 非空；`sidebarHtml` 为清洗后版本 | 通过 | `test-p8-branding.mjs` 1a、6a |
+| 2 | PWA manifest `GET /manifest.webmanifest` | 200 `application/manifest+json`；含 `name`、`start_url:"/"`、`display:"standalone"`、192/512 两条 icon | 通过 | 1b；E2E 4e |
+| 3 | 合法 PNG 上传 | magic `89 50 4E 47` 校验通过，201 返回 `/branding/<slot>-<hash8>.png` | 通过 | 3a、3e |
+| 4 | 伪造文件拦截 | 扩展名 `.png` 但内容为 HTML → 400 `invalid_input`；magic 与扩展名不一致拒绝 | 通过 | 3b |
+| 5 | 大小上限 | 600KB 文件 → 413 `payload_too_large`（上限 512KB） | 通过 | 3c |
+| 6 | 合法 SVG 上传 | 内容含 `<svg` 且非 HTML 伪装，201 | 通过 | 3d |
+| 7 | 路径穿越 | `/branding/..%2fdb.js` → 404 | 通过 | 3f |
+| 8 | PATCH 配置回读 | `logoLightUrl/logoDarkUrl` 写入后公开接口可读；非法协议 / 超长 URL（>512）→ 400 | 通过 | 4a/4b/4e/4f |
+| 9 | DELETE 回落 | 删 slot 后公开接口该字段为 `null` | 通过 | 4c/4d |
+| 10 | 侧边栏 HTML 清洗矩阵（10 条） | 保留 `<strong>`、`<a href="https://…">`、`http://` 链接、白名单域名图片、本站相对路径图片；剔除 `script/iframe/on*/style(url()/data:/javascript:`、非白名单域名图片、`data:` 图片 | 通过 | 5a–5j |
+| 11 | 鉴权 | 未登录 `/api/branding` 200；未登录 `/api/admin/branding` 401 `unauthorized` | 通过 | 6a/6b |
+| 12 | 短链回落 | 无配置时 `/branding/favicon` → `/assets/favicon.svg`，`/branding/logo-light` → `/assets/favicon.svg`，`/branding/logo-dark` → `/assets/icons/favicon.svg`（302） | 通过 | 7a/7b/7c |
+| 13 | 前端品牌贯穿 | 管理端边栏暗色显示暗色 LOGO；切浅色后切换日间 LOGO，切回暗色复原；`<link rel=icon>` 指向 `/branding/favicon`；manifest link 存在且 200；登录页显示新 LOGO 与站点名；边栏底部自定义 HTML 以无脚本 iframe 渲染；全程 `pageerror` = 0 | 通过 | E2E 4a–4e、5a/5b、6a/6b、7 |
+| 14 | LOGO 真实可解码 | E2E 上传的 64×64 PNG 由 Node 手写 PNG 编码器（IHDR + deflateSync IDAT + CRC32）生成；断言 `<img>` `naturalWidth/naturalHeight > 0`（实测 64×64），非伪造文件头 | 通过 | E2E 4a、5a、6a |
+| 15 | 侧边栏 iframe 跟随主题 | srcdoc 内联注入与 tokens.css 对应的明暗两套色板（背景 panel、文字 fg/fg-dim、链接 info、`color-scheme`）；主题切换时监听同一 `r6t5:theme` 事件重建 iframe srcdoc，深色→浅色→深色双向重绘已断言；高度按内容贴合 60–160px，超出在 iframe 内部滚动 | 通过 | E2E 4c、5c、5d |
+
+### 12.2 关键实现位置
+
+- 品牌配置读写 / 上传落盘 / magic 校验 / 回落映射：`server/services/branding.js`（`BRAND_SLOTS`、`UPLOAD_MAX_BYTES=512KB`、`detectImageType()`、`saveUploadedFile()`、`resolveBrandingFile()`、`DEFAULT_FALLBACKS`）。
+- HTML 白名单清洗：`server/lib/html-sanitize.js`（`sanitizeSidebarHtml()`、`isSafeSidebarHtml()`、`ALLOWED_TAGS`、`ALLOWED_IMG_HOST_SUFFIXES`）；前端等价实现 `public/assets/api.js` `R6T5.sanitizeSidebarHtml()`。
+- 管理端路由：`server/routes/admin-branding.js`（GET / PATCH / upload / DELETE）。
+- 公开路由与 manifest：`server/routes/branding-public.js`（`brandingApiRouter`、`brandingAssetRouter`、`manifestHandler`）。
+- 挂载：`server/app.js`（`adminApi.use('/branding', …)`、`/api/branding`、`/branding`、`/manifest.webmanifest`，静态中间件之前）。
+- 前端品牌模块：`public/assets/api.js` `R6T5.brand`（`load/apply/renderSideHtml`，主题事件后重选 LOGO）；设置页交互 `public/assets/admin.js` `initBrandSettings()`；样式 `public/assets/admin.css`、`public/assets/base.css`。
+
+### 12.3 已执行的自检命令与汇总
+
+隔离环境：`DB_PATH=/tmp/p8a/r6t5.db STORAGE_ROOT=/tmp/p8a/volume PORT=8190 DEV_AUTH=1 ADMIN_PASSWORD=test123 node server/index.js`。
+
+| 脚本 | 汇总（干净隔离库，FAIL=0） |
+|---|---|
+| `tools/test-p8-branding.mjs` | **30/30 通过** |
+| `tools/brand-e2e.mjs`（puppeteer-core + Chromium） | **17/17 通过** |
+| `tools/smoke-test.mjs` 回归 | **90/90 通过** |
+
+截图（`docs/screenshots/console/`，未覆盖既有文件）：
+
+- `A-brand-settings.png`：设置页品牌卡片（5 个资源位的 URL / 上传 / 清除控件、侧边栏 HTML 文本域、预览与保存按钮）。
+- `A-brand-login.png`：上传并保存一套 LOGO 后登录页显示新 LOGO 与站点名。
+- `A-brand-sidebar.png`：管理端边栏 brand 显示新 LOGO，底部自定义 HTML 经 iframe 渲染。
+
+### 12.4 未验证 / 沙箱限制（如实说明）
+
+| 项 | 原因 | 上线前怎么补 |
+|---|---|---|
+| 真实浏览器明暗主题切换 | 仅在本机 headless Chromium 验证点击切换后 LOGO 随主题切换；未在真机浏览器验证主题持久化、系统主题跟随与首屏闪烁 | 真机 Chrome / Safari 走一遍明暗切换与刷新保持 |
+| PWA manifest 真实安装 | 未在真实 PWA 环境（安装到桌面、独立窗口、离线启动）校验；`icons` 的实际像素尺寸未与文件核对，size 字段按 192 / 512 布局标注 | 在支持 PWA 的浏览器中安装站点，核对图标与启动屏 |
+| SVG 完整性校验 | 仅检测 `<svg` 存在性与 HTML 伪装，未做完整 XML 解析 / 外部实体 / 嵌套攻击校验 | 如需更强校验可接入 XML 解析器并禁用外部实体 |
+
+## 13. P8-B：注册策略 / SMTP / 邮箱确认 / 验证码 / 第三方登录（实测）
+
+### 13.1 逐项结果（实测）
+
+| # | 能力 | 规则 | 结果 | 证据 |
+|---|---|---|---|---|
+| 1 | 域白名单 | `allowDomains=example.com,*.corp.test`：`a@example.com`、`b@sub.corp.test` 允许；`c@other.com` → 400 `signup_domain_not_allowed` | 通过 | test-p8 1a/1b/1c |
+| 2 | 域黑名单优先 | `denyDomains=blocked.example.com` 优先于白名单拦截 → 400 `signup_domain_blocked` | 通过 | 1d |
+| 3 | 子地址开关 | `forbidSubAddress=true`：`x+y@example.com` → 400 `signup_subaddress_forbidden` | 通过 | 1e |
+| 4 | 未配 SMTP 注册 | 201，`status=pending_review`，`confirmEmail.configured=false`；同 cookie 上传 403 `email_unconfirmed`、建分享 403；下载不被 403 拦截 | 通过 | 2a/2b/2c/2d |
+| 5 | 配 SMTP 注册 | 201，`status=pending_email`；假 SMTP 收到确认邮件，正文含 `/confirm?token=`；确认后用户 `active`，同 cookie 上传 201 | 通过 | 3a/3b/3c/3d/3e |
+| 6 | 令牌一次性 / 过期 | 令牌二次使用 → HTML「链接已失效」且不再置 active；篡改 `expiresAt` 为过去 → 失效页且含联系邮箱（replyTo 优先） | 通过 | 3f/3g |
+| 7 | 测试发信 / 不可达 | `/admin/mail/test` 200 `code=250`；host 改不可达端口 → 502 `upstream_error` 且 `details.smtpCode` 存在；`GET /admin/mail` 不含密码明文（独特密码串断言） | 通过 | 4a/4b/4c |
+| 8 | 验证码配置 | 未配 secret 时 `turnstile.disabledReason` 非空；配 secret + `onSignup=true` 且不带 token 注册 → 400 `captcha_failed`；`security-config` 不下发 secret | 通过 | 5a/5b/5c |
+| 9 | 管理员手动确认 | `POST /admin/users/:id/confirm` 将 `pending_review` 置 `active`；审计可查 `email_confirm`(detail=`manual`) | 通过 | 6a/6b |
+| 10 | 第三方登录占位 | 未配置 provider 时 `/api/auth/oauth/providers` 返回空数组；`/start` → 503 `integration_not_configured` | 通过 | 7a/7b |
+
+### 13.2 关键实现位置
+
+- 注册策略：`server/services/signup-policy.js`（`checkEmailAllowed()`、`parseDomainList()`、`domainMatches()`、`policySettings()`）。
+- SMTP 客户端（零依赖 net/tls）：`server/lib/smtp.js`（`sendMail()`、`SmtpSession`：EHLO / STARTTLS 升级回落 / AUTH PLAIN·LOGIN / 多收件人 / DATA dot-stuffing / 多行响应 / 超时）。
+- 配置脱敏与发信服务：`server/services/mail-config.js`（`smtpConfig/isConfigured/contactEmail/maskedConfig`）、`server/services/mailer.js`（`sendPlain/sendConfirmEmail/issueToken/findValidToken/consumeToken/resolvePublicUrl`）、`server/lib/html-mail.js`。
+- 验证码：`server/services/captcha.js`（`getConfig/isEnabled/providerStatus/verify`，三 provider siteverify 适配位）。
+- 第三方登录：`server/services/oauth/index.js`（注册表 / state 签名 / 回调组装）、`oidc.js`（Discovery / token / userinfo / id_token 声明校验）、`logto.js`、`qq.js`。
+- 路由：`server/routes/admin-mail.js`、`admin-security.js`、`auth-confirm.js`、`auth-oauth.js`；受限守卫 `server/middleware/auth.js` `requireConfirmed`；用户确认接口 `server/routes/admin-users.js`（`/:id/confirm`、`confirmRequired`）。
+- 数据结构：`server/schema.sql` `email_tokens` 表；`server/lib/errors.js` 新增 5 个错误码；`server/services/audit.js` 白名单补 `email_confirm`、`oauth_login`。
+
+### 13.3 已执行的自检命令与汇总
+
+隔离环境：`DB_PATH=/tmp/p8/r6t5.db STORAGE_ROOT=/tmp/p8/volume PORT=8195 DEV_AUTH=1 ADMIN_PASSWORD=test123 node server/index.js`，假 SMTP 由 `tools/fake-smtp.mjs` 自拉起（2525 / 2526）。
+
+| 脚本 | 汇总（干净隔离库） |
+|---|---|
+| `tools/test-p8-security.mjs` | **PASS=30 FAIL=0 SKIP=0 总计=30** |
+| `tools/smoke-test.mjs` 回归 | **90/90 通过** |
+| `tools/test-p6-user-source.mjs` 回归 | **39/39 通过** |
+| `tools/test-p7-signup-sudo-units.mjs` 回归 | **35/35 通过** |
+
+### 13.4 未验证 / 沙箱限制（如实说明）
+
+| 项 | 原因 | 上线前怎么补 |
+|---|---|---|
+| QQ 互联 / Logto / 通用 OIDC 真实链路 | 沙箱无对应应用与外网可达的授权回调；授权码交换、userinfo、回调建号仅按文档实现，未联调 | 接真实应用走一遍 start → callback → 建号 → 会话 → 登录态保持 |
+| OIDC id_token 签名验签 | 零依赖约束下只校验 `iss/aud/exp` 声明，未做 JWKS 公钥验签 | 接入 JWKS 验签（jwks_uri），校验签名与 `kid` |
+| 真实 Turnstile / hCaptcha / reCAPTCHA 验票 | 沙箱仅验证「缺 token 拦截」与配置回显；真实 siteverify 网络结果未测 | 配真 secret 在测试场景跑一次通过 / 拒绝用例 |
+| SMTP 真实服务商 | 仅对接本地假 SMTP；TLS 升级、真实 AUTH、大附件 / 多收件人未对真实邮箱服务商验证 | 接真实 SMTP（465 / 587）发信并核对收件箱与退信 |
+| 明文回落风险 | `secure=false` 且服务端不支持 STARTTLS 时按明文继续发信；生产须用 TLS 端口 | 部署时强制 TLS 端口与 `secure` 正确取值，避免明文传账号密码 |
+| 外链落地域名 | 白名单只校验 `src/href` 声明域名，未跟踪 30x 重定向后的落地域名 | 如对外链有强约束，渲染前做回源校验或改用本站代理 |
+| 侧边栏 iframe 高度自适应 | 已按同源 srcdoc 的 `body.scrollHeight` 贴合 60–160px；未在超长内容（>160px）下实测内部滚动条体验，跨文档高度测量依赖同源 srcdoc（sandbox 未开 allow-scripts） | 超长公告内容下真机核对内部滚动；如需跨源内容再改 postMessage 回传高度 |

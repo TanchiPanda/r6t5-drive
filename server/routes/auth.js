@@ -7,8 +7,12 @@ import { writeAudit } from '../services/audit.js';
 import { setUserCookie, clearCookies, readUserSession } from '../lib/session.js';
 import { requireUser } from '../middleware/auth.js';
 import { loginFails, recordLoginFail, clearLoginFails } from '../middleware/auth.js';
-import { badRequest, forbidden } from '../lib/errors.js';
-import { accountBanned, notSupportedInSource, signupClosed, invalidSignup, signupRateLimited } from '../lib/errors.js';
+import { badRequest, forbidden, ApiError } from '../lib/errors.js';
+import { accountBanned, notSupportedInSource, signupClosed, invalidSignup, signupRateLimited, captchaFailed } from '../lib/errors.js';
+import { checkEmailAllowed, policySettings } from '../services/signup-policy.js';
+import * as captcha from '../services/captcha.js';
+import * as mailer from '../services/mailer.js';
+import { contactEmail } from '../services/mail-config.js';
 import { getUserSource, isVolumeSource, verifyLocalPassword, hashLocalPassword } from '../services/user-source.js';
 import { genId, nowIso } from '../lib/format.js';
 import { ENV } from '../config.js';
@@ -21,29 +25,54 @@ function clientIp(req) {
   return req.ip || req.socket?.remoteAddress || '';
 }
 
+/** 场景启用时校验 captcha；失败写审计并抛 400 captcha_failed。 */
+async function requireCaptcha(req, ip, scene) {
+  const token = req.body?.captchaToken || req.body?.captcha || req.body?.token || '';
+  const result = await captcha.verify(token, ip, scene);
+  if (!result.ok) {
+    writeAudit({ email: req.body?.email || '', action: 'login', ip, detail: `captcha_fail:${result.reason || result.code}` });
+    throw captchaFailed({ reason: result.reason || result.code, scene });
+  }
+  return result;
+}
+
+/** 注册响应里的邮箱确认状态片段。 */
+function confirmEmailPayload(sent = false) {
+  return { configured: mailer.isConfigured(), sent, contactEmail: contactEmail() };
+}
+
 // ---- P7 volume 自助注册：同 IP 内存令牌桶 ----
 // 容量 5，每分钟补 1 个；失败（含邮箱已存在）同样计数。
-const SIGNUP_BUCKET_CAPACITY = 5;
-const SIGNUP_REFILL_PER_MIN = 1;
+// 容量 / 补充速率可用环境变量覆盖（自测隔离库用）；生产默认 5 次/分钟补 1 个。
+const SIGNUP_BUCKET_CAPACITY = Number(process.env.SIGNUP_BUCKET_CAPACITY || 5);
+const SIGNUP_REFILL_PER_MIN = Number(process.env.SIGNUP_REFILL_PER_MIN || 1);
 const signupBuckets = new Map();
 
-function signupAllow(ip) {
+function signupPeek(ip) {
+  const now = Date.now();
+  const rec = signupBuckets.get(ip);
+  if (!rec) return true;
+  // 按时间补令牌：每分钟补 SIGNUP_REFILL_PER_MIN 个，封顶容量
+  const elapsedMin = (now - rec.last) / 60000;
+  const refill = Math.floor(elapsedMin * SIGNUP_REFILL_PER_MIN);
+  if (refill > 0) {
+    rec.tokens = Math.min(SIGNUP_BUCKET_CAPACITY, rec.tokens + refill);
+    rec.last = now;
+  }
+  return rec.tokens > 0;
+}
+
+// 只有真正会创建账号的尝试才扣令牌：参数校验失败、域策略拒绝、验证码失败都不计入，
+// 避免用户改邮箱地址/域名时被自己的重试锁死。令牌桶仍然限制了账号创建的频率。
+function signupConsume(ip) {
   const now = Date.now();
   const rec = signupBuckets.get(ip);
   if (!rec) {
     signupBuckets.set(ip, { tokens: SIGNUP_BUCKET_CAPACITY - 1, last: now });
-    return true;
+    return;
   }
-  // 按时间补令牌：每分钟补 SIGNUP_REFILL_PER_MIN 个，封顶容量
-  const elapsedMin = (now - rec.last) / 60000;
-  const refill = BigInt(Math.floor(elapsedMin * SIGNUP_REFILL_PER_MIN));
-  if (refill > 0n) {
-    rec.tokens = Math.min(SIGNUP_BUCKET_CAPACITY, rec.tokens + Number(refill));
-    rec.last = now;
-  }
-  if (rec.tokens <= 0) return false;
-  rec.tokens -= 1;
-  return true;
+  rec.tokens = Math.max(0, rec.tokens - 1);
+  rec.last = now;
 }
 
 /** 注册分配组：开启 allow_self_signup 的组中按 createdAt 最前（id 兜底）取一条。 */
@@ -67,6 +96,7 @@ router.post('/login', async (req, res, next) => {
     const { email, password } = req.body || {};
     if (!email || !password) throw badRequest('invalid_input', '邮箱与密码不能为空', { field: 'email' });
     const normalized = String(email).toLowerCase();
+    await requireCaptcha(req, clientIp(req), 'onLogin');
     const source = getUserSource();
     const key = `${normalized}|${clientIp(req)}`;
     if (loginFails(key) >= 5) {
@@ -163,8 +193,17 @@ router.post('/signup', async (req, res, next) => {
         throw badRequest('invalid_input', '两次输入的密码不一致', { field: 'passwordConfirm' });
       }
 
-      // 限流：同 IP 令牌桶；通过参数校验的尝试（含邮箱已存在）都计数。
-      if (!signupAllow(ip)) throw signupRateLimited({ field: 'email' });
+      // 注册策略：白/黑名单 + 子地址开关（先于限流，策略拒绝不消耗令牌）
+      const policy = checkEmailAllowed(normalized);
+      if (!policy.ok) {
+        writeAudit({ email: normalized, action: 'signup', ip, detail: policy.code });
+        throw new ApiError(400, policy.code, policy.message);
+      }
+      await requireCaptcha(req, ip, 'onSignup');
+
+      // 限流：同 IP 令牌桶，真正会建号的尝试（含邮箱已存在）才计数。
+      if (!signupPeek(ip)) throw signupRateLimited({ field: 'email' });
+      signupConsume(ip);
 
       const group = pickSignupGroup();
       if (!group) {
@@ -179,13 +218,27 @@ router.post('/signup', async (req, res, next) => {
         throw invalidSignup();
       }
 
+      // 邮箱确认状态机：配了 SMTP → pending_email（发确认信）；未配 → pending_review（不发信）。
+      // 两种都直接建会话；发信失败不回滚账号。
+      const smtpConfigured = mailer.isConfigured();
+      const status = smtpConfigured ? 'pending_email' : 'pending_review';
+      let confirmToken = null;
+      if (smtpConfigured) confirmToken = mailer.issueToken(normalized, 'confirm');
+
       const uid = genId('u');
       const now = nowIso();
       const passwordHash = hashLocalPassword(String(password));
       db.prepare(
         `INSERT INTO users (id, email, displayName, groupId, disabled, status, passwordHash, registeredAt, lastLoginAt, createdAt)
-         VALUES (?, ?, '', ?, 0, 'active', ?, ?, NULL, ?)`
-      ).run(uid, normalized, group.id, passwordHash, now, now);
+         VALUES (?, ?, '', ?, 0, ?, ?, ?, NULL, ?)`
+      ).run(uid, normalized, group.id, status, passwordHash, now, now);
+
+      let emailSent = false;
+      if (smtpConfigured) {
+        const publicUrl = mailer.resolvePublicUrl(req);
+        const sent = await mailer.sendConfirmEmail(normalized, confirmToken.token, publicUrl);
+        emailSent = !!sent.ok;
+      }
 
       const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
       const session = {
@@ -198,15 +251,25 @@ router.post('/signup', async (req, res, next) => {
         exp: Date.now() + 7 * 86400000,
       };
       setUserCookie(res, db, session);
-      writeAudit({ email: normalized, action: 'signup', ip, detail: `local:${group.name}` });
-      res.status(201).json({ ok: true, user: publicUser(fresh, resolveGroup(fresh)), setup: { next: 'ready' } });
+      writeAudit({ email: normalized, action: 'signup', ip, detail: `local:${group.name},status:${status},sent:${emailSent}` });
+      res.status(201).json({
+        ok: true,
+        user: publicUser(fresh, resolveGroup(fresh)),
+        setup: { next: 'ready' },
+        status,
+        confirmEmail: confirmEmailPayload(emailSent),
+      });
       return;
     }
 
     // ---- supabase 模式：保持现有行为（allowSignup 设置 + Supabase /auth/v1/signup）----
     if (getSetting('allowSignup', 'false') !== 'true') throw forbidden('未开放自助注册');
     const { email, password } = req.body || {};
+    const normalizedSb = String(email || '').toLowerCase();
     if (!EMAIL_RE.test(email || '')) throw badRequest('invalid_input', '邮箱格式不正确', { field: 'email' });
+    const policy = checkEmailAllowed(normalizedSb);
+    if (!policy.ok) throw new ApiError(400, policy.code, policy.message);
+    await requireCaptcha(req, clientIp(req), 'onSignup');
     const c = supabase.getConfig();
     const result = await fetch(`${c.url}/auth/v1/signup`, {
       method: 'POST',
@@ -246,6 +309,20 @@ router.get('/signup-config', (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// 免登录安全配置：前端据此决定是否展示验证码 / 注册策略提示（secret 不下发）。
+router.get('/security-config', (req, res) => {
+  const cap = captcha.getConfig();
+  const policy = policySettings();
+  res.json({
+    captcha: cap,
+    signup: {
+      forbidSubAddress: policy.forbidSubAddress,
+      hasAllowList: policy.allowDomains.length > 0,
+      hasDenyList: policy.denyDomains.length > 0,
+    },
+  });
+});
+
 router.post('/logout', (req, res) => {
   const payload = readUserSession(req, db);
   const session = payload?.email || req.user?.email || null;
@@ -259,6 +336,8 @@ meRouter.get('/', requireUser, (req, res) => {
   const user = req.user;
   res.json({
     user: req.publicUser,
+    status: req.publicUser.status,
+    confirmEmail: confirmEmailPayload(false),
     quota: quotaForUser(user),
     trash: { count: trashCount(user.email), bytes: trashBytes(user.email) },
   });
