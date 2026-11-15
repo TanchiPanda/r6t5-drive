@@ -248,7 +248,12 @@
     var linkBtn = document.getElementById('setup-link');
     var ready = s.ready === true || s.next === 'ready';
     note.className = 'note ' + (ready ? 'ok' : 'warn');
-    noteBody.textContent = s.hint || (ready ? '配置完成，可以使用邮箱登录' : '站点尚未配置完成');
+    if (s.userSource === 'volume') {
+      // 数据卷模式：提示条不出现 Supabase 字样；即便 next 异常回落到 supabase 也按 volume 文案渲染
+      noteBody.textContent = '当前由数据卷管理账号，请使用管理员分配的邮箱与密码登录';
+    } else {
+      noteBody.textContent = s.hint || (ready ? '配置完成，可以使用邮箱登录' : '站点尚未配置完成');
+    }
     if (!linkBtn) return;
     if (ready) {
       linkBtn.classList.add('hide');
@@ -275,7 +280,7 @@
       email.disabled = true;
       pass.disabled = true;
       btn.textContent = '站点尚未就绪';
-      if (status.next === 'supabase' && status.link) {
+      if (status.next === 'supabase' && status.link && status.userSource !== 'volume') {
         adminEntry.href = status.link;
         adminEntry.textContent = status.linkLabel || '进入管理后台';
         adminEntry.classList.remove('hide');
@@ -297,7 +302,8 @@
         btn.textContent = old;
         var msg;
         switch (err.code) {
-          case 'invalid_credentials': msg = '邮箱或密码不正确'; break;
+          case 'invalid_credentials': msg = '邮箱或密码错误'; break;
+          case 'account_banned': msg = (err && err.message) || '账号已被封禁，请联系管理员'; break;
           case 'supabase_not_configured': msg = '站点尚未接通账号中心，请联系管理员'; break;
           case 'rate_limited': msg = '尝试过于频繁，请稍后再试'; break;
           default: msg = (err && err.message) || '登录失败';
@@ -321,8 +327,20 @@
       view: localStorage.getItem('r6t5.view') || 'list',
       searching: false,
       q: ''
-    }
+    },
+    /* 多选：path 集合；lastChecked 用于 Shift 区间选择 */
+    selected: new Set(),
+    lastCheckedPath: null,
+    /* 进行中的分片上传任务，便于卸载/取消 */
+    chunkJobs: [],
+    highlightedPath: null
   };
+
+  var CHUNK_THRESHOLD = 16 * 1024 * 1024; // 超过 16 MB 走分片上传
+  var DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024; // 8 MiB，可被后端返回值对齐
+  var CHUNK_CONCURRENCY = 3;
+  var CHUNK_MAX_RETRY = 3;
+  var CHUNK_RETRY_BASE_MS = 1000;
 
   var STRATEGY_TYPE_LABEL = { volume: '本地卷', s3: 'S3', github: 'GitHub' };
   var MATCH_LABEL = { binding: '目录绑定', group: '用户组默认', local: '本地默认' };
@@ -351,8 +369,10 @@
     await loadDir(initPath);
     bindFilesToolbar();
     bindFileModals();
+    bindArchiveModals();
     bindTrashDrawer();
     bindMySharesDrawer();
+    wireResumeInput();
   }
 
   /* ---------- 目录加载 ---------- */
@@ -364,6 +384,8 @@
     var searchInput = document.getElementById('search-input');
     searchInput.value = '';
     document.getElementById('search-clear').classList.add('hide');
+    Files.selected.clear();
+    Files.lastCheckedPath = null;
     var res = await guardedGet('/api/files', { path: Files.state.path });
     Files.state.crumbs = res.crumbs || [];
     Files.state.items = res.items || [];
@@ -373,6 +395,7 @@
     renderStrategyBadge();
     applyReadOnly();
     renderItems();
+    refreshResumeBanner();
   }
 
   function renderStrategyBadge() {
@@ -401,6 +424,10 @@
       btn.disabled = ro;
       btn.title = ro ? tip : '';
     });
+    /* 只读目录：隐藏/禁用多选与批量操作 */
+    var allChecks = document.querySelectorAll('.row-check-input, #head-select-all');
+    allChecks.forEach(function (c) { c.disabled = ro; });
+    renderBatchBar();
   }
 
   function renderCrumbs() {
@@ -434,9 +461,11 @@
         '<div class="empty"><div class="ico">▢</div><h3>' +
         (Files.state.searching ? '没有找到匹配的文件' : '还没有文件') + '</h3>' +
         '<p>' + (Files.state.searching ? '换个关键字试试，或清空搜索回到当前目录' : '拖进来或点上传') + '</p></div>';
+      renderBatchBar();
       return;
     }
     var q = Files.state.searching ? Files.state.q : '';
+    var ro = strategyReadOnly();
     if (Files.state.view === 'grid') {
       area.className = 'file-grid';
       area.innerHTML = items.map(function (it) {
@@ -445,7 +474,11 @@
           ? (it.itemCount != null ? it.itemCount + ' 项' : '文件夹')
           : (it.sizeBytes == null ? '—' : R6T5.fmtBytes(it.sizeBytes));
         var remote = it.remote ? '<span class="badge acc">云端</span>' : '';
-        return '<div class="file-card" data-path="' + R6T5.esc(it.path) + '" data-type="' + it.type + '">' +
+        var sel = Files.selected.has(it.path) ? ' selected' : '';
+        var hl = Files.highlightedPath === it.path ? ' hl' : '';
+        return '<div class="file-card' + sel + hl + '" data-path="' + R6T5.esc(it.path) + '" data-type="' + it.type + '">' +
+          '<label class="row-check" title="选择此项"><input type="checkbox" class="row-check-input" aria-label="选择 ' + R6T5.esc(it.name) + '"' +
+          (Files.selected.has(it.path) ? ' checked' : '') + (ro ? ' disabled' : '') + '></label>' +
           '<div class="fic">' + iconFor(it) + '</div>' +
           '<div class="fname" title="' + R6T5.esc(it.name) + '">' + nameHtml + remote + '</div>' +
           '<div class="meta"><span>' + meta + '</span><span>' + R6T5.fmtAgo(it.updatedAt) + '</span></div>' +
@@ -455,12 +488,18 @@
       area.className = 'file-list';
       area.innerHTML =
         '<div class="table-wrap"><table class="table"><thead><tr>' +
+        '<th class="col-check"><label class="check row-check" title="全选当前目录"><input type="checkbox" id="head-select-all" aria-label="全选当前目录"' +
+        (ro ? ' disabled' : '') + '></label></th>' +
         '<th>名称</th><th class="num">大小</th><th>修改时间</th><th></th></tr></thead><tbody>' +
         items.map(function (it) {
           var nameHtml = hlName(it.name, q);
           var size = it.type === 'dir' ? '—' : (it.sizeBytes == null ? '—' : R6T5.fmtBytes(it.sizeBytes));
           var remote = it.remote ? '<span class="badge acc">云端</span>' : '';
-          return '<tr class="file-row" data-path="' + R6T5.esc(it.path) + '" data-type="' + it.type + '">' +
+          var sel = Files.selected.has(it.path) ? ' selected' : '';
+          var hl = Files.highlightedPath === it.path ? ' hl' : '';
+          return '<tr class="file-row' + sel + hl + '" data-path="' + R6T5.esc(it.path) + '" data-type="' + it.type + '">' +
+            '<td class="col-check"><label class="row-check" title="选择此项"><input type="checkbox" class="row-check-input" aria-label="选择 ' + R6T5.esc(it.name) + '"' +
+            (Files.selected.has(it.path) ? ' checked' : '') + (ro ? ' disabled' : '') + '></label></td>' +
             '<td><div class="name"><span class="fic">' + iconFor(it) + '</span>' +
             '<span class="fname" title="' + R6T5.esc(it.name) + '">' + nameHtml + '</span>' + remote + '</div></td>' +
             '<td class="num meta">' + size + '</td>' +
@@ -470,6 +509,7 @@
     }
     bindItemEvents(area);
     refreshPreviewStates(area);
+    renderBatchBar();
   }
 
   /* 逐文件拉取 meta，决定预览按钮是否可用；不可预览时 title 展示 reason */
@@ -500,21 +540,39 @@
     if (it.type === 'file') {
       ops += '<button class="btn sm ghost" data-op="preview" title="预览">◈</button>' +
         '<button class="btn sm ghost" data-op="download" title="下载">↓</button>';
+      if (isZipFile(it)) {
+        var ro = strategyReadOnly();
+        var exDis = ro ? ' disabled title="' + R6T5.esc(readOnlyTip()) + '"' : '';
+        ops += '<button class="btn sm ghost" data-op="extract" title="解压"' + exDis + '>▥</button>';
+      }
     }
     // 分享是读操作：只读策略下仍然可用
     ops += '<button class="btn sm ghost" data-op="share" title="分享">↗</button>';
-    var ro = strategyReadOnly();
-    var dis = ro ? ' disabled title="' + R6T5.esc(readOnlyTip()) + '"' : '';
+    var ro2 = strategyReadOnly();
+    var dis = ro2 ? ' disabled title="' + R6T5.esc(readOnlyTip()) + '"' : '';
     ops += '<button class="btn sm ghost" data-op="rename" title="重命名"' + dis + '>✎</button>' +
       '<button class="btn sm ghost" data-op="move" title="移动"' + dis + '>➦</button>' +
       '<button class="btn sm ghost danger" data-op="delete" title="删除"' + dis + '>✕</button>';
     return ops;
   }
 
+  function isZipFile(it) {
+    if (it.type !== 'file') return false;
+    var ext = String(it.name || '').split('.').pop().toLowerCase();
+    return ext === 'zip' || (it.mime || '').indexOf('zip') >= 0;
+  }
+
   function bindItemEvents(area) {
     area.querySelectorAll('[data-path]').forEach(function (row) {
       var path = row.getAttribute('data-path');
       var type = row.getAttribute('data-type');
+      var check = row.querySelector('.row-check-input');
+      if (check) {
+        check.addEventListener('click', function (e) { e.stopPropagation(); });
+        check.addEventListener('change', function (e) {
+          onRowCheck(path, check.checked, e.shiftKey);
+        });
+      }
       row.querySelectorAll('[data-op]').forEach(function (btn) {
         btn.addEventListener('click', function (e) {
           e.stopPropagation();
@@ -527,10 +585,11 @@
           else if (op === 'rename') openRename(item);
           else if (op === 'move') openMove(item);
           else if (op === 'delete') openDelete(item);
+          else if (op === 'extract') openExtract(item);
         });
       });
       row.querySelector('.name, .fname, .file-card') && row.addEventListener('click', function (e) {
-        if (e.target.closest('[data-op]')) return;
+        if (e.target.closest('[data-op]') || e.target.closest('.row-check')) return;
         if (type === 'dir') loadDir(path);
         else {
           var item = Files.state.items.find(function (x) { return x.path === path; });
@@ -538,6 +597,100 @@
         }
       });
     });
+    /* 表头全选 */
+    var head = area.querySelector('#head-select-all');
+    if (head) {
+      head.addEventListener('change', function () { toggleSelectAll(head.checked); });
+    }
+  }
+
+  /* ---------- 多选 ---------- */
+
+  function currentSelectableItems() {
+    return Files.state.items.slice();
+  }
+
+  function onRowCheck(path, checked, shiftKey) {
+    var list = currentSelectableItems();
+    if (shiftKey && Files.lastCheckedPath) {
+      var from = list.findIndex(function (x) { return x.path === Files.lastCheckedPath; });
+      var to = list.findIndex(function (x) { return x.path === path; });
+      if (from >= 0 && to >= 0) {
+        var lo = Math.min(from, to), hi = Math.max(from, to);
+        for (var i = lo; i <= hi; i += 1) {
+          if (checked) Files.selected.add(list[i].path);
+          else Files.selected.delete(list[i].path);
+        }
+      } else {
+        applyOne(path, checked);
+      }
+    } else {
+      applyOne(path, checked);
+    }
+    Files.lastCheckedPath = path;
+    renderItems();
+  }
+
+  function applyOne(path, checked) {
+    if (checked) Files.selected.add(path);
+    else Files.selected.delete(path);
+  }
+
+  function toggleSelectAll(checked) {
+    currentSelectableItems().forEach(function (it) {
+      if (checked) Files.selected.add(it.path);
+      else Files.selected.delete(it.path);
+    });
+    renderItems();
+  }
+
+  function selectedItems() {
+    return Files.state.items.filter(function (x) { return Files.selected.has(x.path); });
+  }
+
+  function renderBatchBar() {
+    var bar = document.getElementById('batch-bar');
+    if (!bar) return;
+    var sel = selectedItems();
+    var ro = strategyReadOnly();
+    var count = sel.length;
+    if (count === 0) {
+      bar.classList.add('hide');
+      return;
+    }
+    bar.classList.remove('hide');
+    var totalBytes = sel.reduce(function (s, it) {
+      return s + (it.type === 'file' && Number.isFinite(Number(it.sizeBytes)) ? Number(it.sizeBytes) : 0);
+    }, 0);
+    var sizeLabel = sel.some(function (it) { return it.type === 'dir'; })
+      ? R6T5.fmtBytes(totalBytes) + '（目录大小未计入）'
+      : R6T5.fmtBytes(totalBytes);
+    var countEl = document.getElementById('batch-count');
+    countEl.textContent = count + ' 项 · ' + sizeLabel;
+
+    var zipBtn = document.getElementById('batch-zip');
+    var compressBtn = document.getElementById('batch-compress');
+    var delBtn = document.getElementById('batch-delete');
+    [zipBtn, compressBtn, delBtn].forEach(function (b) { b.disabled = ro; });
+    if (ro) {
+      [zipBtn, compressBtn, delBtn].forEach(function (b) { b.title = readOnlyTip(); });
+    } else {
+      [zipBtn, compressBtn, delBtn].forEach(function (b) { b.title = ''; });
+    }
+    /* 压缩为 zip 仅在多选（≥2）时突出显示；单选仍可打包下载 */
+    compressBtn.classList.toggle('hide', count < 2);
+
+    var head = document.getElementById('head-select-all');
+    if (head) {
+      head.checked = count > 0 && count === Files.state.items.length;
+      head.indeterminate = count > 0 && count < Files.state.items.length;
+    }
+  }
+
+  function clearSelection() {
+    Files.selected.clear();
+    Files.lastCheckedPath = null;
+    renderItems();
   }
 
   function downloadItem(item) {
@@ -771,6 +924,16 @@
 
     document.getElementById('mkdir-btn').addEventListener('click', openMkdir);
 
+    /* 批量操作条 */
+    document.getElementById('batch-clear').addEventListener('click', clearSelection);
+    document.getElementById('batch-zip').addEventListener('click', batchZipDownload);
+    document.getElementById('batch-compress').addEventListener('click', openCompress);
+    document.getElementById('batch-delete').addEventListener('click', batchDeleteSelected);
+
+    /* 续传提示 */
+    document.getElementById('resume-btn').addEventListener('click', resumePendingUploads);
+    document.getElementById('resume-dismiss').addEventListener('click', dismissResumeBanner);
+
     /* 拖拽 */
     var dz = document.getElementById('dropzone');
     ['dragover', 'dragenter'].forEach(function (ev) {
@@ -829,7 +992,7 @@
     renderItems();
   }
 
-  /* ---------- 上传（XHR 拿进度） ---------- */
+  /* ---------- 上传：小文件走表单直传，大文件走分片 ---------- */
 
   function uploadFiles(fileList) {
     if (strategyReadOnly()) {
@@ -838,10 +1001,13 @@
     }
     var files = Array.prototype.slice.call(fileList);
     if (!files.length) return;
-    files.forEach(uploadOne);
+    files.forEach(function (file) {
+      if (file.size > CHUNK_THRESHOLD) startChunkUpload(file);
+      else uploadOneSimple(file);
+    });
   }
 
-  function uploadOne(file) {
+  function uploadOneSimple(file) {
     var queue = document.getElementById('upload-queue');
     queue.classList.remove('hide');
     var row = document.createElement('div');
@@ -877,7 +1043,7 @@
         var err = (data && data.error) || {};
         status.textContent = '失败';
         status.className = 'danger';
-        R6T5.toast(uploadErrMsg(err.code, err.details, err.message), 'danger');
+        R6T5.toast(archiveErrMsg(err.code, err.details, err.message), 'danger');
       }
     };
     xhr.onerror = function () {
@@ -890,18 +1056,575 @@
     xhr.send(fd);
   }
 
-  function uploadErrMsg(code, details, fallback) {
+  /* ---------- 分片上传（init → 并发 PUT 分片 → complete，支持续传/取消/重试） ---------- */
+
+  function chunkQueueRow(title) {
+    var queue = document.getElementById('upload-queue');
+    queue.classList.remove('hide');
+    var row = document.createElement('div');
+    row.className = 'up-row card tight chunk-up';
+    row.innerHTML =
+      '<div class="row tight"><span class="up-ico">↑</span>' +
+      '<span class="up-name flex1 trunc"></span><span class="up-status faint"></span></div>' +
+      '<div class="bar thin mt2" role="progressbar" aria-label="上传进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i style="width:0%"></i></div>' +
+      '<div class="row tight mt2 chunk-ops hide">' +
+      '<button class="btn sm ghost" data-chunk="retry" type="button">重试</button>' +
+      '<button class="btn sm danger" data-chunk="cancel" type="button">取消上传</button>' +
+      '</div>';
+    row.querySelector('.up-name').textContent = title;
+    queue.appendChild(row);
+    return row;
+  }
+
+  function chunkJobView(job) {
+    return {
+      file: job.file,
+      uploadId: job.uploadId,
+      parentPath: job.parentPath,
+      name: job.name,
+      sizeBytes: job.sizeBytes,
+      chunkSize: job.chunkSize,
+      totalChunks: job.totalChunks,
+      received: new Set(job.received || []),
+      cancelled: false,
+      failed: false,
+      row: job.row,
+      bar: job.row.querySelector('.bar i'),
+      status: job.row.querySelector('.up-status'),
+      ops: job.row.querySelector('.chunk-ops')
+    };
+  }
+
+  async function startChunkUpload(file, opts) {
+    opts = opts || {};
+    var row = chunkQueueRow(file.name);
+    var job = { file: file, row: row, received: opts.received || [], chunkSize: opts.chunkSize,
+      uploadId: opts.uploadId, parentPath: Files.state.path, name: file.name, sizeBytes: file.size };
+    var view = chunkJobView(job);
+    Files.chunkJobs.push(view);
+    setChunkStatus(view, '初始化…', 'faint');
+
+    try {
+      var initBody = {
+        parentPath: Files.state.path,
+        name: file.name,
+        sizeBytes: file.size,
+        chunkSize: DEFAULT_CHUNK_SIZE
+      };
+      if (opts.overwrite) initBody.overwrite = '1';
+      var initRes = await guardedPost('/api/uploads/init', initBody);
+      view.uploadId = initRes.uploadId;
+      view.chunkSize = initRes.chunkSize;
+      view.totalChunks = initRes.totalChunks;
+      view.received = new Set(initRes.received || []);
+      await runChunkJob(view);
+    } catch (e) {
+      if (view.cancelled) return;
+      chunkFail(view, e, true);
+    }
+  }
+
+  function chunkPartSlice(view, index) {
+    var start = index * view.chunkSize;
+    var end = Math.min(start + view.chunkSize, view.sizeBytes);
+    return view.file.slice(start, end);
+  }
+
+  async function runChunkJob(view) {
+    if (view.cancelled) return;
+    /* 续传场景：先拉详情拿最新 missing */
+    var missing = [];
+    try {
+      var detail = await guardedGet('/api/uploads/' + encodeURIComponent(view.uploadId));
+      var item = detail.item || {};
+      view.received = new Set(item.received || []);
+      view.totalChunks = item.totalChunks || view.totalChunks;
+      view.chunkSize = item.chunkSize || view.chunkSize;
+      missing = item.missing && item.missing.length ? item.missing : missingList(view);
+    } catch (e) {
+      if (e && e.code === 'upload_session_expired') throw e;
+      missing = missingList(view);
+    }
+    updateChunkBar(view);
+
+    var queue = missing.slice();
+    var inFlight = 0;
+    var aborted = false;
+
+    async function worker() {
+      while (queue.length && !aborted && !view.cancelled) {
+        var index = queue.shift();
+        if (view.received.has(index)) continue;
+        inFlight += 1;
+        try {
+          await putPartWithRetry(view, index);
+          view.received.add(index);
+          updateChunkBar(view);
+        } catch (e) {
+          aborted = true;
+          queue.unshift(index);
+          chunkFail(view, e, false);
+          return;
+        } finally {
+          inFlight -= 1;
+        }
+      }
+    }
+
+    var workers = [];
+    for (var w = 0; w < CHUNK_CONCURRENCY; w += 1) workers.push(worker());
+    await Promise.all(workers);
+
+    if (view.cancelled || aborted) return;
+
+    setChunkStatus(view, '合并中…', 'faint');
+    /* complete 返回 409 upload_incomplete 且 details.missing 有片时，自动补齐缺失片再 complete，最多 2 轮 */
+    const MAX_COMPLETE_ROUNDS = 2;
+    for (let round = 0; ; round += 1) {
+      try {
+        var completeRes = await guardedPost('/api/uploads/' + encodeURIComponent(view.uploadId) + '/complete', {});
+        chunkDone(view, completeRes && completeRes.item);
+        return;
+      } catch (e) {
+        const missing = e && e.details && Array.isArray(e.details.missing)
+          ? e.details.missing.map(Number).filter(Number.isInteger)
+          : [];
+        if (e && e.code === 'upload_incomplete' && missing.length && round < MAX_COMPLETE_ROUNDS) {
+          setChunkStatus(view, '补齐缺失分片（第 ' + (round + 1) + ' 轮）…', 'warn');
+          for (const idx of missing) {
+            if (view.cancelled) return;
+            if (view.received.has(idx)) continue;
+            await putPartWithRetry(view, idx);
+            view.received.add(idx);
+          }
+          updateChunkBar(view);
+          setChunkStatus(view, '合并中…', 'faint');
+          continue;
+        }
+        chunkFail(view, e, false);
+        return;
+      }
+    }
+  }
+
+  function missingList(view) {
+    var out = [];
+    for (var i = 0; i < view.totalChunks; i += 1) {
+      if (!view.received.has(i)) out.push(i);
+    }
+    return out;
+  }
+
+  async function putPartWithRetry(view, index) {
+    var attempt = 0;
+    while (attempt <= CHUNK_MAX_RETRY) {
+      if (view.cancelled) throw new R6T5.ApiError('upload_aborted', '已取消上传', 0);
+      var blob = chunkPartSlice(view, index);
+      try {
+        var res = await fetch('/api/uploads/' + encodeURIComponent(view.uploadId) + '/part/' + index, {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: blob
+        });
+        if (!res.ok) {
+          var data = null;
+          try { data = await res.json(); } catch (_) { data = null; }
+          var err = (data && data.error) || {};
+          throw new R6T5.ApiError(err.code || 'http_' + res.status, err.message || '分片上传失败（' + res.status + '）', res.status, err.details);
+        }
+        return await res.json();
+      } catch (e) {
+        attempt += 1;
+        if (view.cancelled) throw e;
+        if (attempt > CHUNK_MAX_RETRY) throw e;
+        var delay = CHUNK_RETRY_BASE_MS * Math.pow(2, attempt - 1);
+        setChunkStatus(view, '第 ' + index + ' 片重试（' + attempt + '/' + CHUNK_MAX_RETRY + '）…', 'warn');
+        await sleep(delay);
+      }
+    }
+  }
+
+  function updateChunkBar(view) {
+    var done = view.received.size;
+    var pct = view.totalChunks ? Math.round(done / view.totalChunks * 100) : 0;
+    view.bar.style.width = pct + '%';
+    view.bar.parentElement.setAttribute('aria-valuenow', String(pct));
+    var bytesDone = Math.min(view.sizeBytes, view.received.size * view.chunkSize);
+    view.status.textContent = done + ' / ' + view.totalChunks + ' 片 · ' + pct + '%';
+  }
+
+  function setChunkStatus(view, text, cls) {
+    view.status.textContent = text;
+    view.status.className = cls || 'faint';
+  }
+
+  function chunkDone(view, item) {
+    view.bar.style.width = '100%';
+    view.bar.parentElement.setAttribute('aria-valuenow', '100');
+    setChunkStatus(view, '完成', 'ok');
+    Files.chunkJobs = Files.chunkJobs.filter(function (j) { return j !== view; });
+    if (item && item.path) {
+      Files.highlightedPath = item.path;
+      setTimeout(function () { Files.highlightedPath = null; }, 4000);
+    }
+    setTimeout(function () { view.row.remove(); }, 2600);
+    loadDir(Files.state.path);
+  }
+
+  function chunkFail(view, e, fatal) {
+    view.failed = true;
+    view.ops.classList.remove('hide');
+    var errMsg = archiveErrMsg(e && e.code, e && e.details, e && e.message);
+    setChunkStatus(view, '失败', 'danger');
+    R6T5.toast(errMsg, 'danger');
+    var retryBtn = view.row.querySelector('[data-chunk="retry"]');
+    var cancelBtn = view.row.querySelector('[data-chunk="cancel"]');
+    retryBtn.onclick = function () {
+      view.failed = false;
+      view.ops.classList.add('hide');
+      setChunkStatus(view, '继续上传…', 'faint');
+      runChunkJob(view).catch(function (err) { chunkFail(view, err, false); });
+    };
+    cancelBtn.onclick = function () { abortChunkJob(view); };
+    if (fatal && e && e.code === 'upload_session_expired') {
+      view.row.remove();
+      Files.chunkJobs = Files.chunkJobs.filter(function (j) { return j !== view; });
+    }
+  }
+
+  async function abortChunkJob(view) {
+    view.cancelled = true;
+    if (view.uploadId) {
+      try { await guardedDel('/api/uploads/' + encodeURIComponent(view.uploadId)); } catch (_) { /* 会话可能已清理 */ }
+    }
+    view.row.remove();
+    Files.chunkJobs = Files.chunkJobs.filter(function (j) { return j !== view; });
+    R6T5.toast('已取消该上传', 'warn');
+    refreshResumeBanner();
+  }
+
+  /* 取消按钮绑定（事件委托到队列） */
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-chunk]');
+    if (!btn) return;
+    var row = btn.closest('.up-row');
+    var view = Files.chunkJobs.find(function (j) { return j.row === row; });
+    if (!view) return;
+    if (btn.getAttribute('data-chunk') === 'cancel') abortChunkJob(view);
+  });
+
+  /* ---------- 未完成会话：续传提示 ---------- */
+
+  async function refreshResumeBanner() {
+    var banner = document.getElementById('resume-banner');
+    var text = document.getElementById('resume-banner-text');
+    var btn = document.getElementById('resume-btn');
+    var dismiss = document.getElementById('resume-dismiss');
+    var items;
+    try {
+      var res = await guardedGet('/api/uploads');
+      items = res.items || [];
+    } catch (_) { items = []; }
+    if (!items.length) { banner.classList.add('hide'); return; }
+    var cur = items.filter(function (it) { return it.parentPath === Files.state.path; });
+    var list = cur.length ? cur : items;
+    if (!list.length) { banner.classList.add('hide'); return; }
+    banner.classList.remove('hide');
+    var total = list.reduce(function (s, it) { return s + (it.receivedCount || 0); }, 0);
+    text.textContent = '（' + list.length + ' 个文件，已收 ' + total + ' 片）' +
+      (cur.length ? '' : ' 会话不在当前目录，将按原目录继续');
+    btn.disabled = strategyReadOnly();
+    dismiss.disabled = strategyReadOnly();
+  }
+
+  async function resumePendingUploads() {
+    var res;
+    try { res = await guardedGet('/api/uploads'); }
+    catch (e) { R6T5.toastError(e); return; }
+    var items = res.items || [];
+    if (!items.length) { document.getElementById('resume-banner').classList.add('hide'); return; }
+    /* 逐个续传：需要原始 File 对象，浏览器无法重建；这里把会话挂到队列行，
+       提示用户重新选择同名文件以补齐缺失分片。 */
+    var pending = items[0];
+    var input = document.getElementById('file-input');
+    var note = '请重新选择「' + pending.name + '」以继续未完成的上传（已收 ' +
+      pending.receivedCount + ' / ' + pending.totalChunks + ' 片）';
+    R6T5.toast(note, 'info');
+    input.setAttribute('data-resume-id', pending.uploadId);
+    input.click();
+  }
+
+  function dismissResumeBanner() {
+    document.getElementById('resume-banner').classList.add('hide');
+  }
+
+  /* 续传：用户重新选回同名文件时，按会话 missing 补齐 */
+  function wireResumeInput() {
+    var input = document.getElementById('file-input');
+    input.addEventListener('change', function () {
+      var resumeId = input.getAttribute('data-resume-id');
+      input.removeAttribute('data-resume-id');
+      if (!resumeId || !input.files.length) return;
+      var file = input.files[0];
+      startChunkUpload(file, { uploadId: resumeId, overwrite: true }).catch(function () {});
+      input.value = '';
+    });
+  }
+
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  /* ---------- 错误码 → 中文文案（上传 / 打包 / 压缩 / 解压共用） ---------- */
+
+  function archiveErrMsg(code, details, fallback) {
     details = details || {};
     switch (code) {
+      case 'strategy_readonly':
+        return '当前目录绑定的是只读存储策略，不能写入';
       case 'quota_file':
-        return '单文件超过本组上限 ' + R6T5.fmtBytes(details.limitBytes) + '（当前文件 ' + R6T5.fmtBytes(details.sizeBytes) + '）';
+        return '单文件超过本组上限 ' + R6T5.fmtBytes(details.limitBytes) + '（当前 ' + R6T5.fmtBytes(details.sizeBytes) + '）';
       case 'quota_space':
         return '空间不足，还差 ' + R6T5.fmtBytes(details.needBytes);
       case 'quota_traffic':
         return '7 天上传流量已用尽（已用 ' + R6T5.fmtBytes(details.usedBytes) + ' / 上限 ' + R6T5.fmtBytes(details.limitBytes) + '），周期结束后恢复';
+      case 'conflict':
+        return '同名文件已存在，未覆盖';
+      case 'integration_not_configured':
+        return '外部存储尚未配置，请联系管理员';
+      case 'storage_not_configured':
+        return '站点还没有可用的存储策略，请联系管理员添加';
+      case 'zip_slip_blocked':
+        return '压缩包内含越界路径（../ 或绝对路径），出于安全已拒绝解压';
+      case 'zip_invalid':
+        return '压缩包格式无效或已损坏，无法解压';
+      case 'zip_too_large':
+        return '解压后体积超出上限 ' + R6T5.fmtBytes(details.limitBytes);
+      case 'zip_too_many_entries':
+        return '压缩包条目数量超出上限（' + (details.entries || '—') + ' 条）';
+      case 'upload_incomplete':
+        return '分片尚未全部上传完成，请补齐缺失分片后再完成';
+      case 'upload_session_expired':
+        return '上传会话已过期，请重新选择文件上传';
+      case 'upload_session_not_found':
+        return '上传会话不存在或已清理，请重新开始';
+      case 'upload_part_out_of_range':
+        return '分片序号超出范围';
+      case 'not_found':
+        return '路径不存在或已被移动';
+      case 'invalid_input':
+        return fallback || '请求参数不正确';
       default:
-        return fallback || '上传失败';
+        return fallback || '操作失败，请稍后重试';
     }
+  }
+
+  /* ---------- 批量打包下载 / 在线压缩 / 解压 ---------- */
+
+  function selectedPaths() {
+    return selectedItems().map(function (it) { return it.path; });
+  }
+
+  /* 批量删除：逐个调用单条删除 API，汇总成功/失败并 toast 后端 message */
+  async function batchDeleteSelected() {
+    var sel = selectedItems();
+    if (!sel.length) return;
+    if (strategyReadOnly()) { R6T5.toast(readOnlyTip(), 'warn'); return; }
+    if (!confirm('确定删除选中的 ' + sel.length + ' 项？删除后先进入回收站。')) return;
+    var ok = 0;
+    var fail = 0;
+    var failMsgs = [];
+    for (var i = 0; i < sel.length; i += 1) {
+      var it = sel[i];
+      try {
+        await guardedDel('/api/files', { path: it.path });
+        ok += 1;
+        Files.selected.delete(it.path);
+      } catch (e) {
+        fail += 1;
+        failMsgs.push(it.name + '：' + ((e && e.message) || '失败'));
+      }
+    }
+    if (fail === 0) {
+      R6T5.toast('已删除 ' + ok + ' 项', 'ok');
+    } else {
+      R6T5.toast('已删除 ' + ok + ' 项，失败 ' + fail + ' 项' +
+        (failMsgs.length ? '（' + failMsgs.slice(0, 3).join('；') + '）' : ''), 'danger');
+    }
+    loadDir(Files.state.path);
+  }
+
+  async function batchZipDownload() {
+    var paths = selectedPaths();
+    if (!paths.length) return;
+    if (strategyReadOnly()) { R6T5.toast(readOnlyTip(), 'warn'); return; }
+    var plan;
+    try {
+      plan = await guardedPost('/api/files/zip/plan', { paths: paths });
+    } catch (e) { R6T5.toastError(archiveErrMsg(e && e.code, e && e.details, e && e.message)); return; }
+    if (plan.tooLarge) {
+      R6T5.toast('打包体积超出上限（共 ' + R6T5.fmtBytes(plan.totalBytes) + '），请分批下载', 'warn');
+      return;
+    }
+    if (plan.entries > 10000) {
+      R6T5.toast('打包条目过多（' + plan.entries + ' 条），请分批下载', 'warn');
+      return;
+    }
+    var btn = document.getElementById('batch-zip');
+    var oldText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '打包中…';
+    try {
+      var res = await fetch('/api/files/zip', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: paths })
+      });
+      if (!res.ok) {
+        var data = null;
+        try { data = await res.json(); } catch (_) { data = null; }
+        var err = (data && data.error) || {};
+        throw new R6T5.ApiError(err.code || 'http_' + res.status, err.message || '打包下载失败（' + res.status + '）', res.status, err.details);
+      }
+      var blob = await res.blob();
+      var fileName = parseZipDownloadName(res.headers.get('content-disposition')) || '打包下载.zip';
+      triggerBlobDownload(blob, fileName);
+      R6T5.toast('已开始下载 ' + plan.entries + ' 个文件', 'ok');
+    } catch (e) {
+      R6T5.toast(archiveErrMsg(e && e.code, e && e.details, e && e.message), 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+
+  function parseZipDownloadName(disposition) {
+    if (!disposition) return '';
+    var m = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (m) { try { return decodeURIComponent(m[1]); } catch (_) { return m[1]; } }
+    var plain = disposition.match(/filename="?([^";]+)"?/i);
+    return plain ? plain[1] : '';
+  }
+
+  function triggerBlobDownload(blob, fileName) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 800);
+  }
+
+  /* 在线压缩 */
+  var CompressForm = { paths: [] };
+
+  function openCompress() {
+    if (strategyReadOnly()) { R6T5.toast(readOnlyTip(), 'warn'); return; }
+    CompressForm.paths = selectedPaths();
+    if (!CompressForm.paths.length) return;
+    var input = document.getElementById('compress-name');
+    input.value = '打包.zip';
+    document.getElementById('compress-err').textContent = '';
+    R6T5.modal.open('#m-compress');
+    input.focus();
+    input.select();
+  }
+
+  async function submitCompress() {
+    var input = document.getElementById('compress-name');
+    var errBox = document.getElementById('compress-err');
+    var name = input.value.trim();
+    if (!name) { errBox.textContent = '请输入压缩包名称'; return; }
+    var btn = document.getElementById('compress-ok');
+    btn.disabled = true;
+    errBox.textContent = '';
+    try {
+      var res = await guardedPost('/api/files/compress', {
+        paths: CompressForm.paths,
+        targetPath: Files.state.path,
+        name: name
+      });
+      R6T5.modal.close('#m-compress');
+      R6T5.toast('已压缩 ' + (res.entries || 0) + ' 个条目为 ' + (res.item && res.item.name), 'ok');
+      if (res.item && res.item.path) {
+        Files.highlightedPath = res.item.path;
+        setTimeout(function () { Files.highlightedPath = null; }, 4000);
+      }
+      clearSelection();
+      loadDir(Files.state.path);
+    } catch (e) {
+      errBox.textContent = archiveErrMsg(e && e.code, e && e.details, e && e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /* 解压 */
+  var ExtractForm = { target: null };
+
+  function openExtract(item) {
+    if (strategyReadOnly()) { R6T5.toast(readOnlyTip(), 'warn'); return; }
+    ExtractForm.target = item;
+    document.getElementById('extract-src-name').textContent = item.name;
+    var dirs = Files.state.items.filter(function (x) { return x.type === 'dir'; });
+    var sel = document.getElementById('extract-target-dir');
+    sel.innerHTML = '<option value="">— 当前目录 —</option>' +
+      '<option value="' + R6T5.esc(Files.state.path) + '">当前目录（' + R6T5.esc(R6T5.basename(Files.state.path) || Files.email) + '）</option>' +
+      dirs.map(function (d) {
+        return '<option value="' + R6T5.esc(d.path) + '">' + R6T5.esc(d.name) + '</option>';
+      }).join('');
+    document.getElementById('extract-target-path').value = '';
+    var result = document.getElementById('extract-result');
+    result.classList.add('hide');
+    result.innerHTML = '';
+    document.getElementById('extract-err').textContent = '';
+    R6T5.modal.open('#m-extract');
+  }
+
+  async function submitExtract() {
+    if (!ExtractForm.target) return;
+    var sel = document.getElementById('extract-target-dir');
+    var manual = document.getElementById('extract-target-path').value.trim();
+    var targetPath = manual || sel.value || Files.state.path;
+    var errBox = document.getElementById('extract-err');
+    var result = document.getElementById('extract-result');
+    var btn = document.getElementById('extract-ok');
+    errBox.textContent = '';
+    btn.disabled = true;
+    try {
+      var res = await guardedPost('/api/files/extract', { path: ExtractForm.target.path, targetPath: targetPath });
+      renderExtractResult(res);
+      loadDir(Files.state.path);
+    } catch (e) {
+      errBox.textContent = archiveErrMsg(e && e.code, e && e.details, e && e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function renderExtractResult(res) {
+    var result = document.getElementById('extract-result');
+    result.classList.remove('hide');
+    var skipped = (res.skipped || []).slice(0, 5);
+    var skipHtml = skipped.length
+      ? '<div class="extract-skip mt2"><span class="faint small">已跳过 ' + (res.skipped || []).length + ' 个同名文件：</span>' +
+        skipped.map(function (s) { return '<div class="mono-sm trunc">· ' + R6T5.esc(s.name) + (s.reason === 'exists' ? '（已存在）' : '') + '</div>'; }).join('') +
+        '</div>'
+      : '';
+    result.innerHTML =
+      '<div class="note ok"><span class="ico">✓</span><div>解压完成：新增 ' + (res.extracted || 0) +
+      ' 个文件' + ((res.skipped || []).length ? '，跳过 ' + res.skipped.length + ' 个' : '') +
+      '，共 ' + R6T5.fmtBytes(res.totalBytes) + '</div></div>' + skipHtml;
+  }
+
+  function bindArchiveModals() {
+    R6T5.modal.bind('#m-compress');
+    R6T5.modal.bind('#m-extract');
+    document.getElementById('compress-cancel').addEventListener('click', function () { R6T5.modal.close('#m-compress'); });
+    document.getElementById('compress-ok').addEventListener('click', submitCompress);
+    document.getElementById('extract-cancel').addEventListener('click', function () { R6T5.modal.close('#m-extract'); });
+    document.getElementById('extract-ok').addEventListener('click', submitExtract);
   }
 
   /* ---------- 弹窗：新建文件夹 / 重命名 / 移动 / 删除 ---------- */
@@ -1398,5 +2121,11 @@
     else if (page === 'share') initShare();
   });
 
-  global.App = { Files: Files, R6T5: R6T5 };
+  global.App = { Files: Files, R6T5: R6T5,
+    selectPaths: function (paths) {
+      Files.selected = new Set(paths);
+      renderItems();
+    },
+    clearSelection: clearSelection
+  };
 })(window);

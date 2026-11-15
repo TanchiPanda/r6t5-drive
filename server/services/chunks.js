@@ -251,11 +251,18 @@ export async function putPart(user, uploadId, index, stream, contentLength) {
     // 原子替换：避免半截文件覆盖旧分片
     fs.renameSync(tmpWrite, target);
 
-    const received = parseReceived(row);
-    if (!received.includes(idx)) received.push(idx);
-    received.sort((a, b) => a - b);
-    db.prepare('UPDATE upload_sessions SET received = ?, updatedAt = ? WHERE id = ?')
-      .run(JSON.stringify(received), nowIso(), uploadId);
+    // 并发安全：多个 worker 同时 PUT 不同分片时，不能基于函数开头读到的旧 row 合并 received，
+    // 否则三个请求会互相覆盖、最后落库的 received 少片。这里在事务内重新读取最新行再合并写回。
+    const commitTx = db.transaction(() => {
+      const latest = db.prepare('SELECT * FROM upload_sessions WHERE id = ?').get(uploadId);
+      const received = parseReceived(latest);
+      if (!received.includes(idx)) received.push(idx);
+      received.sort((a, b) => a - b);
+      db.prepare('UPDATE upload_sessions SET received = ?, updatedAt = ? WHERE id = ?')
+        .run(JSON.stringify(received), nowIso(), uploadId);
+      return received;
+    });
+    const received = commitTx();
 
     console.log(`[uploads] part ${idx} received uploadId=${uploadId} bytes=${actual}`);
     return { index: idx, receivedCount: received.length, totalChunks: Number(row.totalChunks) };

@@ -39,7 +39,7 @@
 
 /* ---------- 文件列表（行） ---------- */
 .file-list{display:flex;flex-direction:column;gap:2px}
-.file-row{display:grid;grid-template-columns:minmax(0,1fr) 130px 120px 110px;gap:var(--s3);
+.file-row{display:grid;grid-template-columns:34px minmax(0,1fr) 130px 120px 110px;gap:var(--s3);
   align-items:center;padding:10px var(--s3);border:1px solid transparent;border-radius:var(--r-md)}
 .file-row:hover{background:color-mix(in srgb,var(--fg) 3.5%,transparent)}
 .file-row .name{display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer}
@@ -163,6 +163,30 @@
 .md-body th{background:var(--panel-2)}
 .md-body hr{margin:var(--s4) 0}
 
+/* ---------- P4 多选 / 批量操作条 ---------- */
+.batch-bar{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;padding:var(--s3) var(--s4);margin-bottom:var(--s3)}
+.batch-check{gap:7px;font-size:var(--fs-sm)}
+.batch-check input{width:16px;height:16px;accent-color:var(--acc);flex:none}
+.batch-meta{font-size:var(--fs-sm);color:var(--muted);font-variant-numeric:tabular-nums;min-width:0}
+.batch-ops{display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center}
+.col-check{width:34px}
+.row-check{display:inline-flex;align-items:center;justify-content:center;min-width:18px}
+.row-check input{width:16px;height:16px;accent-color:var(--acc);cursor:pointer}
+.file-row.selected,.file-card.selected{background:color-mix(in srgb,var(--acc) 10%,transparent);border-color:color-mix(in srgb,var(--acc) 40%,transparent)}
+.file-row.hl,.file-card.hl{animation:hl-flash 2.4s ease}
+@keyframes hl-flash{0%{background:color-mix(in srgb,var(--acc) 26%,transparent)}100%{background:transparent}}
+.file-card .row-check{position:absolute;top:8px;left:8px}
+.file-card{position:relative}
+
+/* ---------- P4 分片上传队列行 ---------- */
+.chunk-up .chunk-ops{gap:var(--s2)}
+.chunk-up .bar[role="progressbar"]{margin-top:var(--s2)}
+.extract-skip{display:flex;flex-direction:column;gap:2px;max-height:120px;overflow:auto}
+
+/* ---------- P4 续传提示条 ---------- */
+#resume-banner{align-items:center;gap:var(--s3)}
+#resume-banner .flex1{min-width:0}
+
 /* ---------- 移动端（≤720px）：侧栏折叠为顶部标签 ---------- */
 @media(max-width:720px){
   .shell{grid-template-columns:minmax(0,1fr)}
@@ -176,8 +200,10 @@
   .topbar{padding:0 var(--s4);gap:var(--s2);max-width:100%}
   .searchbox{min-width:0;max-width:100%}
   .main{padding:var(--s4) var(--s4) var(--s8)}
-  .file-row{grid-template-columns:minmax(0,1fr) 90px;grid-template-rows:auto auto}
+  .file-row{grid-template-columns:34px minmax(0,1fr) 90px;grid-template-rows:auto auto}
   .file-row .meta,.file-row .when{display:none}
   .file-row .ops{grid-column:1/-1;justify-content:flex-start}
+  .batch-bar{gap:var(--s2);padding:var(--s3)}
+  .batch-ops{width:100%}
   .quota-grid{gap:var(--s4)}
 }
