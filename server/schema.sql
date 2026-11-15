@@ -186,3 +186,142 @@ CREATE TABLE IF NOT EXISTS email_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_email_tokens_email ON email_tokens(email);
 CREATE INDEX IF NOT EXISTS idx_email_tokens_kind ON email_tokens(kind);
+
+-- OAuth 应用 / 客户端凭据（P9-D1：供桌面客户端与第三方接入）
+-- clientSecret 只存 PBKDF2 派生值（hash 内联 salt），明文仅创建时返回一次；
+-- redirectUris 为 JSON 数组，授权回调逐个白名单精确匹配。
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  id              TEXT PRIMARY KEY,
+  clientId        TEXT NOT NULL UNIQUE,
+  clientSecretHash TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  description     TEXT,
+  scopes          TEXT NOT NULL DEFAULT 'read',
+  redirectUris    TEXT,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  createdAt       TEXT NOT NULL,
+  updatedAt       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  id               TEXT PRIMARY KEY,
+  clientId         TEXT NOT NULL,
+  email            TEXT NOT NULL,
+  scopes           TEXT NOT NULL,
+  accessHash      TEXT NOT NULL UNIQUE,
+  refreshHash      TEXT,
+  expiresAt       TEXT NOT NULL,
+  refreshExpiresAt TEXT,
+  revokedAt        TEXT,
+  createdAt        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_oauth_tokens_client ON oauth_tokens(clientId);
+CREATE INDEX IF NOT EXISTS idx_oauth_tokens_email ON oauth_tokens(email);
+CREATE INDEX IF NOT EXISTS idx_oauth_tokens_refresh ON oauth_tokens(refreshHash);
+
+-- ============ P9-C 积分 / 商店 / 兑换码 / 付费分享 ============
+
+-- 积分流水：余额由本表 SUM(delta) 汇总，不单独建余额列
+CREATE TABLE IF NOT EXISTS points_ledger (
+  id           TEXT PRIMARY KEY,
+  email        TEXT NOT NULL,
+  delta        INTEGER NOT NULL,
+  balanceAfter INTEGER,
+  source       TEXT NOT NULL,
+  refType      TEXT,
+  refId        TEXT,
+  note         TEXT,
+  createdAt    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_points_email ON points_ledger(email);
+CREATE INDEX IF NOT EXISTS idx_points_source ON points_ledger(source);
+
+CREATE TABLE IF NOT EXISTS products (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  tag          TEXT,
+  description  TEXT,
+  type         TEXT NOT NULL,
+  storageBytes TEXT,
+  durationDays INTEGER NOT NULL DEFAULT 0,
+  groupId      TEXT,
+  priceMinor   INTEGER NOT NULL,
+  pointsPrice  INTEGER,
+  allowPoints  INTEGER NOT NULL DEFAULT 1,
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  sort         INTEGER NOT NULL DEFAULT 0,
+  createdAt    TEXT NOT NULL,
+  updatedAt    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id           TEXT PRIMARY KEY,
+  orderNo      TEXT NOT NULL UNIQUE,
+  email        TEXT,
+  productId    TEXT,
+  shareToken   TEXT,
+  amountMinor  INTEGER NOT NULL DEFAULT 0,
+  currency     TEXT NOT NULL DEFAULT 'CNY',
+  pointsUsed   INTEGER NOT NULL DEFAULT 0,
+  status       TEXT NOT NULL,
+  channel      TEXT NOT NULL,
+  provider     TEXT NOT NULL DEFAULT 'manual',
+  recoverToken TEXT,
+  providerRef  TEXT,
+  paidAt       TEXT,
+  refundedAt   TEXT,
+  cancelledAt  TEXT,
+  expiresAt    TEXT,
+  note         TEXT,
+  createdAt    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_email ON orders(email);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_share ON orders(shareToken);
+
+CREATE TABLE IF NOT EXISTS redeem_codes (
+  code         TEXT PRIMARY KEY,
+  type         TEXT NOT NULL,
+  storageBytes TEXT,
+  points       INTEGER,
+  durationDays INTEGER,
+  groupId      TEXT,
+  batchId      TEXT NOT NULL,
+  maxUses      INTEGER NOT NULL DEFAULT 1,
+  usedCount    INTEGER NOT NULL DEFAULT 0,
+  boundEmail   TEXT,
+  expiresAt    TEXT,
+  status       TEXT NOT NULL DEFAULT 'active',
+  createdBy    TEXT,
+  lastUsedAt   TEXT,
+  createdAt    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_redeem_batch ON redeem_codes(batchId);
+CREATE INDEX IF NOT EXISTS idx_redeem_status ON redeem_codes(status);
+
+-- 容量加成：配额 = 组配额 + 未过期 grants 之和（bytes 为十进制字符串，BigInt 计算）
+CREATE TABLE IF NOT EXISTS storage_grants (
+  id         TEXT PRIMARY KEY,
+  email      TEXT NOT NULL,
+  bytes      TEXT NOT NULL,
+  expiresAt  TEXT,
+  orderId    TEXT,
+  createdAt  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_grants_email ON storage_grants(email);
+
+-- 付费分享购买凭证：email 为空表示匿名现金下单（凭 recoverToken 查验）
+CREATE TABLE IF NOT EXISTS share_purchases (
+  id         TEXT PRIMARY KEY,
+  email      TEXT,
+  shareToken TEXT NOT NULL,
+  orderId    TEXT NOT NULL,
+  createdAt  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchases_lookup ON share_purchases(email, shareToken);

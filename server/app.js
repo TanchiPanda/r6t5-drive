@@ -39,7 +39,14 @@ import adminMailRouter from './routes/admin-mail.js';
 import adminSecurityRouter from './routes/admin-security.js';
 import authConfirmRouter from './routes/auth-confirm.js';
 import authOauthRouter from './routes/auth-oauth.js';
+import oauthAppRouter from './routes/oauth-app.js';
+import adminOauthClientsRouter from './routes/admin-oauth-clients.js';
 import { brandingApiRouter, brandingAssetRouter, manifestHandler } from './routes/branding-public.js';
+import storeRouter from './routes/store.js';
+import adminStoreRouter from './routes/admin-store.js';
+import adminPointsRouter from './routes/admin-points.js';
+import ordersPublicRouter from './routes/orders-public.js';
+import storeShareRouter from './routes/store-share.js';
 
 const app = express();
 
@@ -53,10 +60,18 @@ app.use('/api/setup', setupRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/auth/confirm', authConfirmRouter);
 app.use('/api/auth/oauth', authOauthRouter);
+// P9-D1：OAuth 应用接入（桌面客户端 / 第三方），与上方社交登录回调互不相关
+app.use('/api/oauth', oauthAppRouter);
 app.use('/api/me', meRouter);
+// 付费分享购买子路由（pay-info 免登录 / buy-points 登录 / orders 匿名受控），先于 requireUser 挂载
+app.use('/api/shares', storeShareRouter);
 // 用户端分享（需登录）与公开访问（免登录）分开挂载
 app.use('/api/shares', requireUser, sharesRouter);
 app.use('/api/share', sharePublicRouter);
+
+// P9-C 商店 / 积分 / 公开订单查询
+app.use('/api/store', requireUser, storeRouter);
+app.use('/api/orders', ordersPublicRouter);
 
 // ---- 管理员认证（登录/登出/会话本身不套 admin 守卫）----
 app.use('/api/admin', adminAuthRouter);
@@ -80,6 +95,9 @@ adminApi.use('/shares', adminSharesRouter);
 adminApi.use('/branding', adminBrandingRouter);
 adminApi.use('/mail', adminMailRouter);
 adminApi.use('/security', adminSecurityRouter);
+adminApi.use('/store', adminStoreRouter);
+adminApi.use('/points', adminPointsRouter);
+adminApi.use('/oauth-clients', adminOauthClientsRouter);
 app.use('/api/admin', adminApi);
 
 // 品牌外观：公开配置（登录页免登录读取）与品牌静态文件 / manifest

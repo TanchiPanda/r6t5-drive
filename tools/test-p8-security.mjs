@@ -207,7 +207,10 @@ check('0c. 建 volume 存储策略', strat.status === 201 || strat.status === 20
 
   const decoded = msgs.messages.map((m) => decodedBody(m));
   const linkIdx = decoded.findIndex((b) => /confirm\?token=([A-Za-z0-9_-]+)/.test(b));
-  const linkMatch = linkIdx >= 0 ? decoded[linkIdx].match(/confirm\?token=([A-Za-z0-9_-]+)/) : null;
+  const linkMatch = linkIdx >= 0
+    ? decoded[linkIdx].match(/confirm\?token=([A-Za-z0-9_-]+(?:\s+[A-Za-z0-9_-]+)*)/)
+    : null;
+  if (linkMatch) linkMatch[1] = linkMatch[1].replace(/\s+/g, '');
   check('3c. 邮件正文含 /confirm?token=', !!linkMatch, `matched=${linkIdx >= 0}`);
 
   if (linkMatch) {

@@ -1636,6 +1636,213 @@
     });
   }
 
+  /* ---------- P8-B：邮件（SMTP） ---------- */
+
+  function providerReasonText(reason) {
+    switch (reason) {
+      case 'missing_secret': return '当前 provider 未配置服务端密钥，场景开关暂不可用';
+      case 'provider_not_set': return '尚未选择验证码类型';
+      case 'not_active': return '';
+      case 'scene_disabled': return '';
+      default: return reason ? ('当前不可用：' + reason) : '';
+    }
+  }
+
+  async function loadMail() {
+    let d;
+    try { d = await Admin.get('/api/admin/mail'); }
+    catch (e) { Admin.toastErr(e); return; }
+    Admin.$('#mail-host').value = d.host || '';
+    Admin.$('#mail-port').value = d.port ?? 587;
+    Admin.$('#mail-username').value = d.username || '';
+    const pw = Admin.$('#mail-password');
+    pw.value = '';
+    pw.placeholder = d.passwordSet ? '已设置（' + (d.passwordMasked || '••••') + '），留空不修改' : '留空表示不修改';
+    Admin.$('#mail-secure').checked = !!d.secure;
+    Admin.$('#mail-fromName').value = d.fromName || '';
+    Admin.$('#mail-fromEmail').value = d.fromEmail || '';
+    Admin.$('#mail-replyTo').value = d.replyTo || '';
+    Admin.$('#mail-timeout').value = d.connTimeoutMs ?? 10000;
+    Admin.$('#mail-status').innerHTML = d.configured
+      ? '<span class="badge ok"><span class="dot-s"></span>已配置</span>'
+      : '<span class="badge warn">未配置</span>';
+    Admin.$('#mail-contact').textContent = d.contactEmail || '未配置';
+  }
+
+  async function onMailSave(ev) {
+    ev.preventDefault();
+    const err = Admin.$('#mail-err');
+    err.textContent = '';
+    const body = {
+      host: Admin.$('#mail-host').value.trim(),
+      port: Number(Admin.$('#mail-port').value),
+      username: Admin.$('#mail-username').value.trim(),
+      secure: Admin.$('#mail-secure').checked,
+      fromName: Admin.$('#mail-fromName').value.trim(),
+      fromEmail: Admin.$('#mail-fromEmail').value.trim(),
+      replyTo: Admin.$('#mail-replyTo').value.trim(),
+      connTimeoutMs: Number(Admin.$('#mail-timeout').value)
+    };
+    const pw = Admin.$('#mail-password').value;
+    if (pw) body.password = pw;
+    try {
+      await Admin.patch('/api/admin/mail', body);
+      R6T5.toast('邮件配置已保存', 'ok');
+      await loadMail();
+    } catch (e) {
+      err.textContent = (e && e.message) || '保存失败';
+      Admin.toastErr(e);
+    }
+  }
+
+  function openMailTest() {
+    const err = Admin.$('#mail-test-err');
+    if (err) err.textContent = '';
+    Admin.$('#mail-test-to').value = '';
+    R6T5.modal.open('#m-mail-test');
+  }
+
+  async function onMailTest() {
+    const err = Admin.$('#mail-test-err');
+    const to = (Admin.$('#mail-test-to').value || '').trim();
+    if (!to) { err.textContent = '收件人不能为空'; return; }
+    try {
+      await Admin.post('/api/admin/mail/test', { to });
+      R6T5.toast('测试邮件已发送到 ' + to, 'ok');
+      R6T5.modal.close('#m-mail-test');
+    } catch (e) {
+      const code = e && e.details && e.details.smtpCode ? '（SMTP 码：' + e.details.smtpCode + '）' : '';
+      err.textContent = ((e && e.message) || '测试发信失败') + code;
+      Admin.toastErr(e);
+    }
+  }
+
+  /* ---------- P8-B：注册策略 + 验证码（/api/admin/security） ---------- */
+
+  async function loadSecurity() {
+    let d;
+    try { d = await Admin.get('/api/admin/security'); }
+    catch (e) { Admin.toastErr(e); return; }
+
+    const s = d.signup || {};
+    Admin.$('#policy-allow').value = String(s.allowDomains || '').split(',').map(x => x.trim()).filter(Boolean).join('\n');
+    Admin.$('#policy-deny').value = String(s.denyDomains || '').split(',').map(x => x.trim()).filter(Boolean).join('\n');
+    Admin.$('#policy-forbid-sub').checked = !!s.forbidSubAddress;
+
+    const cap = d.captcha || {};
+    Admin.$('#cap-provider').value = cap.provider || 'turnstile';
+    Admin.$('#cap-siteKey').value = cap.siteKey || '';
+    const sec = Admin.$('#cap-secretKey');
+    sec.value = '';
+    sec.placeholder = cap.secretSet ? '已设置，留空不修改' : '留空表示不修改';
+    Admin.$('#cap-onLogin').checked = !!cap.onLogin;
+    Admin.$('#cap-onSignup').checked = !!cap.onSignup;
+    Admin.$('#cap-onRecover').checked = !!cap.onRecover;
+
+    const providers = cap.providers || {};
+    const active = cap.provider ? providers[cap.provider] : null;
+    const reason = active && active.disabledReason;
+    const reasonText = providerReasonText(reason);
+    Admin.$('#cap-scene-reason').textContent = reasonText;
+    const disable = !!reason && reason !== 'not_active' && reason !== 'scene_disabled';
+    ['#cap-onLogin', '#cap-onSignup', '#cap-onRecover'].forEach(id => { Admin.$(id).disabled = disable; });
+  }
+
+  async function onPolicySave(ev) {
+    ev.preventDefault();
+    const err = Admin.$('#policy-err');
+    err.textContent = '';
+    const lines = v => v.split(/\r?\n/).map(x => x.trim()).filter(Boolean).join(', ');
+    const body = { signup: {
+      allowDomains: lines(Admin.$('#policy-allow').value),
+      denyDomains: lines(Admin.$('#policy-deny').value),
+      forbidSubAddress: Admin.$('#policy-forbid-sub').checked
+    }};
+    try {
+      await Admin.patch('/api/admin/security', body);
+      R6T5.toast('注册策略已保存', 'ok');
+      await loadSecurity();
+    } catch (e) {
+      err.textContent = (e && e.message) || '保存失败';
+      Admin.toastErr(e);
+    }
+  }
+
+  async function onCaptchaSave(ev) {
+    ev.preventDefault();
+    const err = Admin.$('#cap-err');
+    err.textContent = '';
+    const body = { captcha: {
+      provider: Admin.$('#cap-provider').value,
+      siteKey: Admin.$('#cap-siteKey').value.trim(),
+      onLogin: Admin.$('#cap-onLogin').checked,
+      onSignup: Admin.$('#cap-onSignup').checked,
+      onRecover: Admin.$('#cap-onRecover').checked
+    }};
+    const secKey = Admin.$('#cap-secretKey').value;
+    if (secKey) body.captcha.secretKey = secKey;
+    try {
+      await Admin.patch('/api/admin/security', body);
+      R6T5.toast('验证码配置已保存', 'ok');
+      await loadSecurity();
+    } catch (e) {
+      err.textContent = (e && e.message) || '保存失败';
+      Admin.toastErr(e);
+    }
+  }
+
+  /* ---------- P8-B：第三方登录 ---------- */
+
+  async function loadOauth() {
+    let providers = [];
+    try {
+      const r = await Admin.get('/api/auth/oauth/providers');
+      providers = (r && r.providers) || [];
+    } catch (_) { providers = []; }
+    const en = Admin.$('#oauth-enabled');
+    if (en) {
+      en.innerHTML = providers.length
+        ? providers.map(p => '<span class="badge acc">' + R6T5.esc(p.label) + '</span>').join(' ')
+        : '<span class="faint">未启用</span>';
+    }
+    const cb = Admin.$('#oauth-callbacks');
+    if (cb) {
+      const origin = location.origin;
+      cb.innerHTML = ['qq', 'logto', 'oidc'].map(id =>
+        '<div class="kv-line"><span class="k">' + id + ' 回调地址</span><span class="v">' +
+        origin + '/api/auth/oauth/' + id + '/callback</span></div>'
+      ).join('');
+    }
+  }
+
+  async function onOauthSave() {
+    const err = Admin.$('#oauth-err');
+    err.textContent = '';
+    const body = { oauth: {
+      qq: { appId: Admin.$('#oauth-qq-appId').value.trim(), appKey: Admin.$('#oauth-qq-appKey').value.trim() },
+      logto: {
+        issuer: Admin.$('#oauth-logto-issuer').value.trim(),
+        clientId: Admin.$('#oauth-logto-clientId').value.trim(),
+        clientSecret: Admin.$('#oauth-logto-clientSecret').value.trim()
+      },
+      oidc: {
+        issuer: Admin.$('#oauth-oidc-issuer').value.trim(),
+        clientId: Admin.$('#oauth-oidc-clientId').value.trim(),
+        clientSecret: Admin.$('#oauth-oidc-clientSecret').value.trim(),
+        scope: Admin.$('#oauth-oidc-scope').value.trim()
+      },
+      redirectBase: Admin.$('#oauth-redirectBase').value.trim()
+    }};
+    try {
+      await Admin.patch('/api/admin/security', body);
+      await loadOauth();
+      R6T5.toast('第三方登录配置已保存', 'ok');
+    } catch (e) {
+      err.textContent = (e && e.message) || '保存失败';
+      Admin.toastErr(e);
+    }
+  }
+
   async function initSettings() {
     Admin.bindLogout();
     await Admin.requireAdmin();
@@ -1675,6 +1882,24 @@
     f.addEventListener('submit', onSettingsSave);
 
     initBrandSettings();
+
+    // P8-B：邮件 / 注册策略 / 验证码 / 第三方登录
+    await loadMail();
+    await loadSecurity();
+    await loadOauth();
+    const mailForm = Admin.$('#mail-form');
+    if (mailForm) mailForm.addEventListener('submit', onMailSave);
+    const mailTest = Admin.$('#mail-test-btn');
+    if (mailTest) mailTest.addEventListener('click', openMailTest);
+    const mailTestSend = Admin.$('#mail-test-send');
+    if (mailTestSend) mailTestSend.addEventListener('click', onMailTest);
+    const policyForm = Admin.$('#policy-form');
+    if (policyForm) policyForm.addEventListener('submit', onPolicySave);
+    const capForm = Admin.$('#captcha-form');
+    if (capForm) capForm.addEventListener('submit', onCaptchaSave);
+    const oauthSave = Admin.$('#oauth-save-btn');
+    if (oauthSave) oauthSave.addEventListener('click', onOauthSave);
+
     await initUpdateStatus();
   }
 

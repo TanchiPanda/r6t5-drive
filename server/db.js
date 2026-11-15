@@ -82,6 +82,35 @@ export function migrate() {
     db.exec('ALTER TABLE users ADD COLUMN registeredAt TEXT');
     db.prepare('UPDATE users SET registeredAt = createdAt WHERE registeredAt IS NULL').run();
   }
+  // P9-C：会员到期时间（group_upgrade 商品 / 兑换码写入；Cron 到期降级时清空）
+  if (!userCols.includes('groupExpiresAt')) {
+    db.exec('ALTER TABLE users ADD COLUMN groupExpiresAt TEXT');
+  }
+
+  // P9-C：付费分享标记与积分价（老库补列，默认免费）
+  const shareCols = db.prepare('PRAGMA table_info(shares)').all().map((c) => c.name);
+  if (!shareCols.includes('paidDownload')) {
+    db.exec('ALTER TABLE shares ADD COLUMN paidDownload INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!shareCols.includes('pricePoints')) {
+    db.exec('ALTER TABLE shares ADD COLUMN pricePoints INTEGER');
+  }
+
+  // P9-C：billing 默认设置（已存在的键不覆盖）
+  const billingDefaults = {
+    'billing.pointsPerMinorUnit': '1',
+    'billing.commissionPercent': '10',
+    'billing.allowAnonymousPurchase': 'true',
+    'billing.storeNavEnabled': 'false',
+    'billing.overQuotaGraceDays': '7',
+    'billing.cronNotifyExpr': '0 9 * * *',
+    'billing.cronBanExpr': '@every 1h',
+    'billing.notifyOnExpireDays': '3',
+  };
+  for (const [k, v] of Object.entries(billingDefaults)) {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(k);
+    if (!row) setSetting(k, v);
+  }
 }
 
 export function getSetting(key, fallback = null) {

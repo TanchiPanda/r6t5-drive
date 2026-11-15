@@ -7,7 +7,8 @@ import { writeAudit } from '../services/audit.js';
 import { setUserCookie, clearCookies, readUserSession } from '../lib/session.js';
 import { requireUser } from '../middleware/auth.js';
 import { loginFails, recordLoginFail, clearLoginFails } from '../middleware/auth.js';
-import { badRequest, forbidden, ApiError } from '../lib/errors.js';
+import { badRequest, forbidden, ApiError, bearerInvalid } from '../lib/errors.js';
+import { verifyAccessToken as oauthVerifyAccessToken } from '../services/oauth/apps.js';
 import { accountBanned, notSupportedInSource, signupClosed, invalidSignup, signupRateLimited, captchaFailed } from '../lib/errors.js';
 import { checkEmailAllowed, policySettings } from '../services/signup-policy.js';
 import * as captcha from '../services/captcha.js';
@@ -332,14 +333,30 @@ router.post('/logout', (req, res) => {
 });
 
 const meRouter = Router();
-meRouter.get('/', requireUser, (req, res) => {
-  const user = req.user;
-  res.json({
-    user: req.publicUser,
-    status: req.publicUser.status,
-    confirmEmail: confirmEmailPayload(false),
-    quota: quotaForUser(user),
-    trash: { count: trashCount(user.email), bytes: trashBytes(user.email) },
+meRouter.get('/', (req, res, next) => {
+  // P9-D1：Bearer 访问令牌（OAuth 客户端）也可访问 /api/me；仅返回只读资料，不带文件权限模型。
+  const authHeader = req.headers.authorization || '';
+  if (authHeader.startsWith('Bearer ')) {
+    const principal = oauthVerifyAccessToken(authHeader.slice(7).trim());
+    if (!principal) return next(bearerInvalid());
+    return res.json({
+      via: 'oauth',
+      user: { email: principal.email, displayName: principal.email },
+      scopes: principal.scopes,
+      clientId: principal.clientId,
+      clientName: principal.clientName,
+    });
+  }
+  requireUser(req, res, (err) => {
+    if (err) return next(err);
+    const user = req.user;
+    res.json({
+      user: req.publicUser,
+      status: req.publicUser.status,
+      confirmEmail: confirmEmailPayload(false),
+      quota: quotaForUser(user),
+      trash: { count: trashCount(user.email), bytes: trashBytes(user.email) },
+    });
   });
 });
 

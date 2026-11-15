@@ -111,6 +111,150 @@
             </div>
           </div>
 
+          <div class="card" id="mail-card" style="max-width:720px">
+            <div class="page-head">
+              <div><h2>邮件（SMTP）</h2><p class="sub">确认邮件与系统通知的发信配置；密码仅服务端保存，回显脱敏</p></div>
+            </div>
+            <div class="kv-line"><span class="k">邮件服务</span><span class="v" id="mail-status">—</span></div>
+            <div class="kv-line"><span class="k">联系邮箱</span><span class="v" id="mail-contact">—</span></div>
+            <form id="mail-form" novalidate>
+              <div class="grid g2">
+                <div class="field">
+                  <label for="mail-host">SMTP 主机</label>
+                  <input class="input" id="mail-host" type="text" placeholder="smtp.example.com" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="mail-port">端口</label>
+                  <input class="input" id="mail-port" type="number" min="1" max="65535" placeholder="587">
+                </div>
+                <div class="field">
+                  <label for="mail-username">账号（留空跳过 AUTH）</label>
+                  <input class="input" id="mail-username" type="text" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="mail-password">密码</label>
+                  <input class="input" id="mail-password" type="password" autocomplete="off" placeholder="留空表示不修改">
+                </div>
+                <div class="field">
+                  <label for="mail-fromName">发信显示名</label>
+                  <input class="input" id="mail-fromName" type="text" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="mail-fromEmail">发信地址</label>
+                  <input class="input" id="mail-fromEmail" type="email" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="mail-replyTo">回复地址（联系邮箱优先）</label>
+                  <input class="input" id="mail-replyTo" type="email" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="mail-timeout">连接有效期（ms）</label>
+                  <input class="input" id="mail-timeout" type="number" min="1000" placeholder="10000">
+                </div>
+              </div>
+              <label class="check mt2"><input type="checkbox" id="mail-secure"><span>使用隐式 TLS（465）</span></label>
+              <div class="login-err" id="mail-err"></div>
+              <div class="row mt3">
+                <button class="btn primary" type="submit">保存</button>
+                <button class="btn" id="mail-test-btn" type="button">发送测试邮件</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card" id="policy-card" style="max-width:720px">
+            <div class="page-head">
+              <div><h2>注册策略</h2><p class="sub">邮箱域名白名单 / 黑名单与子地址限制；白名单为空 = 不限制，黑名单优先</p></div>
+            </div>
+            <form id="policy-form" novalidate>
+              <div class="field">
+                <label for="policy-allow">白名单域名（每行一个，支持 *.example.com）</label>
+                <textarea class="textarea" id="policy-allow" rows="3" placeholder="example.com"></textarea>
+              </div>
+              <div class="field">
+                <label for="policy-deny">黑名单域名（每行一个，优先于白名单）</label>
+                <textarea class="textarea" id="policy-deny" rows="3"></textarea>
+              </div>
+              <label class="check"><input type="checkbox" id="policy-forbid-sub"><span>不支持带 + 的子地址邮箱</span></label>
+              <div class="login-err" id="policy-err"></div>
+              <div class="row mt3"><button class="btn primary" type="submit">保存注册策略</button></div>
+            </form>
+          </div>
+
+          <div class="card" id="captcha-card" style="max-width:720px">
+            <div class="page-head">
+              <div><h2>人机验证</h2><p class="sub">Turnstile / hCaptcha / reCAPTCHA；服务端密钥永不下发</p></div>
+            </div>
+            <form id="captcha-form" novalidate>
+              <div class="grid g2">
+                <div class="field">
+                  <label for="cap-provider">类型</label>
+                  <select class="select" id="cap-provider">
+                    <option value="turnstile">Turnstile</option>
+                    <option value="hcaptcha">hCaptcha</option>
+                    <option value="recaptcha">reCAPTCHA</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="cap-siteKey">站点密钥（siteKey，可下发）</label>
+                  <input class="input" id="cap-siteKey" type="text" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="cap-secretKey">服务端密钥（secret，留空 = 不改）</label>
+                  <input class="input" id="cap-secretKey" type="password" autocomplete="off">
+                </div>
+              </div>
+              <div class="field">
+                <label>启用场景</label>
+                <div class="scene-switches" id="cap-scenes">
+                  <label class="check"><input type="checkbox" id="cap-onLogin"><span>登录</span></label>
+                  <label class="check"><input type="checkbox" id="cap-onSignup"><span>注册</span></label>
+                  <label class="check"><input type="checkbox" id="cap-onRecover"><span>找回密码</span></label>
+                </div>
+                <span class="help" id="cap-scene-reason"></span>
+              </div>
+              <div class="login-err" id="cap-err"></div>
+              <div class="row mt3"><button class="btn primary" type="submit">保存验证码配置</button></div>
+            </form>
+          </div>
+
+          <div class="card" id="oauth-card" style="max-width:720px">
+            <div class="page-head">
+              <div><h2>第三方登录</h2><p class="sub">QQ 互联 / Logto / 通用 OIDC 授权码登录；回调地址需登记到对应平台白名单</p></div>
+            </div>
+            <div class="kv-line"><span class="k">当前已启用</span><span class="v" id="oauth-enabled">—</span></div>
+            <div class="oauth-callbacks" id="oauth-callbacks"></div>
+            <div class="oauth-provider-block">
+              <div class="oauth-provider-title">QQ 互联</div>
+              <div class="grid g2">
+                <div class="field"><label for="oauth-qq-appId">App ID</label><input class="input" id="oauth-qq-appId" type="text" autocomplete="off"></div>
+                <div class="field"><label for="oauth-qq-appKey">App Key</label><input class="input" id="oauth-qq-appKey" type="password" autocomplete="off"></div>
+              </div>
+            </div>
+            <div class="oauth-provider-block">
+              <div class="oauth-provider-title">Logto</div>
+              <div class="grid g2">
+                <div class="field"><label for="oauth-logto-issuer">Issuer</label><input class="input" id="oauth-logto-issuer" type="text" autocomplete="off" placeholder="https://xxx.logto.app/oidc"></div>
+                <div class="field"><label for="oauth-logto-clientId">Client ID</label><input class="input" id="oauth-logto-clientId" type="text" autocomplete="off"></div>
+                <div class="field"><label for="oauth-logto-clientSecret">Client Secret</label><input class="input" id="oauth-logto-clientSecret" type="password" autocomplete="off"></div>
+              </div>
+            </div>
+            <div class="oauth-provider-block">
+              <div class="oauth-provider-title">通用 OIDC</div>
+              <div class="grid g2">
+                <div class="field"><label for="oauth-oidc-issuer">Issuer</label><input class="input" id="oauth-oidc-issuer" type="text" autocomplete="off" placeholder="https://idp.example.com"></div>
+                <div class="field"><label for="oauth-oidc-clientId">Client ID</label><input class="input" id="oauth-oidc-clientId" type="text" autocomplete="off"></div>
+                <div class="field"><label for="oauth-oidc-clientSecret">Client Secret</label><input class="input" id="oauth-oidc-clientSecret" type="password" autocomplete="off"></div>
+                <div class="field"><label for="oauth-oidc-scope">Scope</label><input class="input" id="oauth-oidc-scope" type="text" autocomplete="off" placeholder="openid email profile"></div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="oauth-redirectBase">回调基址（留空取请求 origin）</label>
+              <input class="input" id="oauth-redirectBase" type="url" placeholder="https://drive.example.com">
+            </div>
+            <div class="login-err" id="oauth-err"></div>
+            <div class="row mt3"><button class="btn primary" id="oauth-save-btn" type="button">保存第三方登录</button></div>
+          </div>
+
           <div class="card" style="max-width:720px">
             <form id="settings-form" novalidate>
               <div class="form-grid">
@@ -175,6 +319,23 @@
     </main>
   </div>
 </div>
+<div class="modal-mask" id="m-mail-test">
+  <div class="modal modal-sm">
+    <div class="modal-head"><h3>发送测试邮件</h3></div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="mail-test-to">收件人邮箱</label>
+        <input class="input" id="mail-test-to" type="email" placeholder="you@example.com" autocomplete="off">
+      </div>
+      <div class="login-err" id="mail-test-err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" type="button" data-close>取消</button>
+      <button class="btn primary" type="button" id="mail-test-send">发送</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-mask" id="m-brand-preview">
   <div class="modal">
     <div class="modal-head"><h3>侧边栏 HTML 预览</h3><div class="spacer"></div><button class="btn icon ghost" data-close type="button">✕</button></div>

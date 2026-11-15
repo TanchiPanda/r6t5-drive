@@ -43,6 +43,160 @@
     if (link) link.addEventListener('click', function (e) { e.preventDefault(); doLogout(); });
   }
 
+  /* ================= 复制（clipboard + execCommand 降级） ================= */
+
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text || '');
+        return true;
+      }
+    } catch (_) { /* 走降级 */ }
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text || '';
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (_) { return false; }
+  }
+
+  /* ================= 受限账号守卫（pending_email / pending_review） ================= */
+
+  /* 拉 /api/me；状态受限则跳 /pending，返回 null。401 由调用方处理。 */
+  async function fetchMeGuarded() {
+    var me;
+    try { me = await R6T5.get('/api/me'); }
+    catch (e) { if (e.status === 401) redirectLogin(); throw e; }
+    if (me.status === 'pending_email' || me.status === 'pending_review') {
+      location.href = '/pending';
+      return null;
+    }
+    return me;
+  }
+
+  /* ================= 验证码抽象（P8-B） =================
+     三个 provider 共用一套挂载 / 取 token / 失败提示；脚本加载失败绝不静默。 */
+
+  var CAPTCHA_SCRIPT_URLS = {
+    turnstile: 'https://challenges.cloudflare.com/turnstile/v0/api.js',
+    hcaptcha: 'https://js.hcaptcha.com/1/api.js',
+    recaptcha: 'https://www.google.com/recaptcha/api.js'
+  };
+  var _captchaScriptCache = {};
+
+  function captchaTheme() { return R6T5.theme.get() === 'light' ? 'light' : 'dark'; }
+
+  function loadCaptchaScript(provider) {
+    if (_captchaScriptCache[provider]) return _captchaScriptCache[provider];
+    var url = CAPTCHA_SCRIPT_URLS[provider];
+    if (!url) {
+      _captchaScriptCache[provider] = Promise.reject(new Error('unknown_provider'));
+      return _captchaScriptCache[provider];
+    }
+    _captchaScriptCache[provider] = new Promise(function (resolve, reject) {
+      var existing = document.getElementById('captcha-script-' + provider);
+      if (existing) { resolve(); return; }
+      var s = document.createElement('script');
+      s.id = 'captcha-script-' + provider;
+      s.src = url;
+      s.async = true; s.defer = true;
+      s.onload = function () { resolve(); };
+      s.onerror = function () { reject(new Error('script_load_failed')); };
+      document.head.appendChild(s);
+    });
+    return _captchaScriptCache[provider];
+  }
+
+  /**
+   * 在挂载点渲染验证码。返回控制器：
+   *  - required: 该场景是否要求验证码（配置齐备才为 true）
+   *  - blocked: 脚本/挂载失败，必须阻止提交
+   *  - getToken(): 当前回调 token；reset(): 提交后清空并重置控件
+   */
+  function renderCaptcha(mountId, errId, scene, cfg) {
+    var mount = document.getElementById(mountId);
+    var errBox = document.getElementById(errId);
+    var controller = { required: false, blocked: false, token: '', widgetId: null, provider: null };
+
+    function showErr(text) {
+      controller.blocked = true;
+      if (errBox) { errBox.textContent = text || '验证码加载失败，请检查网络后重试'; }
+      if (mount) mount.classList.add('captcha-failed');
+    }
+    function clearErr() {
+      controller.blocked = false;
+      if (errBox) errBox.textContent = '';
+      if (mount) mount.classList.remove('captcha-failed');
+    }
+
+    if (!mount) return controller;
+    var cap = (cfg && cfg.captcha) || null;
+    var onScene = !!(cap && cap[scene] === true);
+    if (!cap || !onScene || !cap.provider || !cap.siteKey) {
+      mount.innerHTML = '';
+      return controller;
+    }
+
+    controller.required = true;
+    controller.provider = cap.provider;
+
+    loadCaptchaScript(cap.provider).then(function () {
+      var globals = {
+        turnstile: function () { return window.turnstile; },
+        hcaptcha: function () { return window.hcaptcha; },
+        recaptcha: function () { return window.grecaptcha; }
+      };
+      var api = globals[cap.provider] && globals[cap.provider]();
+      if (!api) throw new Error('api_missing');
+      var opts = {
+        sitekey: cap.siteKey,
+        theme: captchaTheme(),
+        callback: function (token) { controller.token = token || ''; clearErr(); },
+        'error-callback': function () { showErr('验证码加载失败，请检查网络后重试'); }
+      };
+      controller.widgetId = api.render(mount, opts);
+    }).catch(function () {
+      showErr('验证码加载失败，请检查网络后重试');
+    });
+
+    controller.getToken = function () { return controller.token; };
+    controller.reset = function () {
+      controller.token = '';
+      try {
+        var globals = { turnstile: window.turnstile, hcaptcha: window.hcaptcha, recaptcha: window.grecaptcha };
+        var api = globals[controller.provider];
+        if (api && controller.widgetId != null && typeof api.reset === 'function') api.reset(controller.widgetId);
+      } catch (_) { /* 控件已销毁，忽略 */ }
+    };
+    return controller;
+  }
+
+  /* 第三方登录入口：已配置 provider 才渲染按钮；为空整块隐藏。 */
+  async function loadOauthButtons(rowId) {
+    var row = document.getElementById(rowId);
+    if (!row) return;
+    var providers = [];
+    try {
+      var res = await R6T5.get('/api/auth/oauth/providers');
+      providers = (res && res.providers) || [];
+    } catch (_) { providers = []; }
+    if (!providers.length) { row.classList.add('hide'); row.innerHTML = ''; return; }
+    row.innerHTML = '<div class="login-divider">或使用第三方账号登录</div>' +
+      '<div class="oauth-row">' + providers.map(function (p) {
+        return '<button type="button" class="btn ghost block oauth-btn" data-start="' + R6T5.esc(p.startUrl) + '">' +
+          '使用 ' + R6T5.esc(p.label) + ' 登录</button>';
+      }).join('') + '</div>';
+    row.classList.remove('hide');
+    row.querySelectorAll('.oauth-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { location.href = btn.getAttribute('data-start'); });
+    });
+  }
+
   /* ================= 图标（Unicode，纯 CSS） ================= */
 
   function iconFor(item) {
@@ -239,8 +393,13 @@
       };
     }
     renderSetup(status);
-    bindLoginForm(status);
+
+    var secCfg = null;
+    try { secCfg = await R6T5.get('/api/auth/security-config'); } catch (_) { secCfg = null; }
+
+    bindLoginForm(status, secCfg);
     loadSignupEntry();
+    loadOauthButtons('oauth-login');
   }
 
   /* 注册入口：仅当 signup-config.available === true 时展示；supabase 模式不出现 */
@@ -278,7 +437,7 @@
     }
   }
 
-  function bindLoginForm(status) {
+  function bindLoginForm(status, secCfg) {
     var form = document.getElementById('login-form');
     var btn = document.getElementById('login-submit');
     var email = document.getElementById('email');
@@ -286,6 +445,7 @@
     var errBox = document.getElementById('login-err');
     var adminEntry = document.getElementById('setup-link');
     var notReady = !(status.ready === true || status.next === 'ready');
+    var captcha = renderCaptcha('login-captcha', 'login-captcha-err', 'onLogin', secCfg);
 
     if (notReady) {
       btn.disabled = true;
@@ -303,21 +463,31 @@
       e.preventDefault();
       if (btn.disabled) return;
       errBox.textContent = '';
+      if (captcha.required) {
+        if (captcha.blocked) { errBox.textContent = '验证码加载失败，请检查网络后重试'; return; }
+        if (!captcha.getToken()) { errBox.textContent = '请先完成人机验证'; return; }
+      }
       btn.disabled = true;
       var old = btn.textContent;
       btn.textContent = '登录中…';
       try {
-        await R6T5.post('/api/auth/login', { email: email.value.trim(), password: pass.value });
+        await R6T5.post('/api/auth/login', {
+          email: email.value.trim(),
+          password: pass.value,
+          captchaToken: captcha.required ? captcha.getToken() : undefined
+        });
         location.href = loginNext();
       } catch (err) {
         btn.disabled = false;
         btn.textContent = old;
+        captcha.reset();
         var msg;
         switch (err.code) {
           case 'invalid_credentials': msg = '邮箱或密码错误'; break;
           case 'account_banned': msg = (err && err.message) || '账号已被封禁，请联系管理员'; break;
           case 'supabase_not_configured': msg = '站点尚未接通账号中心，请联系管理员'; break;
           case 'rate_limited': msg = '尝试过于频繁，请稍后再试'; break;
+          case 'captcha_failed': msg = (err && err.message) || '人机验证未通过，请重试'; break;
           default: msg = (err && err.message) || '登录失败';
         }
         errBox.textContent = msg;
@@ -339,8 +509,11 @@
     var loginLink = document.getElementById('signup-login-link');
     var minLen = 8;
     var cfg = null;
+    var secCfg = null;
 
     try { cfg = await R6T5.get('/api/auth/signup-config'); } catch (_) { cfg = null; }
+    try { secCfg = await R6T5.get('/api/auth/security-config'); } catch (_) { secCfg = null; }
+    var capPolicy = (secCfg && secCfg.signup) || {};
 
     function showNote(cls, text) {
       note.className = 'note ' + cls;
@@ -369,6 +542,14 @@
 
     minLen = cfg.minPasswordLength || 8;
 
+    /* 注册策略提示：白名单 / 禁子地址 */
+    var policyNotes = [];
+    if (capPolicy.hasAllowList === true) policyNotes.push('本站仅允许特定邮箱域注册，请使用工作邮箱');
+    if (capPolicy.forbidSubAddress === true) policyNotes.push('不支持带 + 的子地址邮箱');
+    if (policyNotes.length) showNote('warn', policyNotes.join('；'));
+
+    var captcha = renderCaptcha('signup-captcha', 'signup-captcha-err', 'onSignup', secCfg);
+
     function validate() {
       var msg = '';
       if (confirm.value && confirm.value !== pass.value) msg = '两次输入的密码不一致';
@@ -385,20 +566,28 @@
       e.preventDefault();
       if (!validate()) return;
       errBox.textContent = '';
+      if (captcha.required) {
+        if (captcha.blocked) { errBox.textContent = '验证码加载失败，请检查网络后重试'; return; }
+        if (!captcha.getToken()) { errBox.textContent = '请先完成人机验证'; return; }
+      }
       btn.disabled = true;
       var old = btn.textContent;
       btn.textContent = '注册中…';
       try {
-        await R6T5.post('/api/auth/signup', {
+        var res = await R6T5.post('/api/auth/signup', {
           email: email.value.trim().toLowerCase(),
           password: pass.value,
-          passwordConfirm: confirm.value
+          passwordConfirm: confirm.value,
+          captchaToken: captcha.required ? captcha.getToken() : undefined
         });
-        location.href = '/files';
+        var st = res && res.status;
+        if (st === 'pending_email' || st === 'pending_review') location.href = '/pending';
+        else location.href = '/files';
       } catch (err) {
         btn.disabled = false;
         btn.textContent = old;
-        // invalid_signup 等：后端 message 原样展示，不自行改写
+        captcha.reset();
+        // invalid_signup / 域策略 / 子地址等：后端 message 原样展示，不自行改写
         errBox.textContent = (err && err.message) || '注册失败';
       }
     });
@@ -448,9 +637,8 @@
     bindLogout();
     var pv = new URLSearchParams(location.search).get('view');
     if (pv === 'grid' || pv === 'list') Files.state.view = pv;
-    var me;
-    try { me = await R6T5.get('/api/me'); }
-    catch (e) { if (e.status === 401) redirectLogin(); throw e; }
+    var me = await fetchMeGuarded();
+    if (!me) return; // 受限账号已跳 /pending
     Files.me = me;
     Files.email = me.user.email;
     Files.quota = me.quota;
@@ -1932,6 +2120,8 @@
 
   async function initAccount() {
     bindLogout();
+    var me = await fetchMeGuarded();
+    if (!me) return; // 受限账号已跳 /pending
     var data;
     try { data = await guardedGet('/api/account'); }
     catch (e) { if (e.status === 401) redirectLogin(); throw e; }
@@ -2202,6 +2392,69 @@
     });
   }
 
+  /* ================= 待确认页（/pending） ================= */
+
+  async function initPending() {
+    bindLogout();
+    var me;
+    try { me = await R6T5.get('/api/me'); }
+    catch (e) { if (e.status === 401) redirectLogin(); return; throw e; }
+
+    /* 已开通：直接回文件页 */
+    if (me.status === 'active') { location.href = '/files'; return; }
+
+    var title = document.getElementById('pending-title');
+    var sub = document.getElementById('pending-sub');
+    var body = document.getElementById('pending-body');
+    var email = (me.user && me.user.email) || '';
+    var confirm = me.confirmEmail || {};
+    var contact = confirm.contactEmail || '';
+
+    function contactBlock() {
+      if (!contact) return '<div class="note warn"><span class="ico">!</span><div>请联系站点管理员开通账号。</div></div>';
+      return '<div class="contact-row">' +
+        '<span class="contact-email">' + R6T5.esc(contact) + '</span>' +
+        '<button class="btn sm ghost" type="button" id="pending-copy">复制</button></div>';
+    }
+    function contactTip() {
+      return '<p class="help mt2">如果长时间未通过，请用注册邮箱向上述地址发邮件申请开通。</p>';
+    }
+
+    if (me.status === 'pending_review') {
+      title.textContent = '等待管理员审核';
+      sub.textContent = '本站未启用邮件确认，账号需要管理员手动开通。';
+      body.innerHTML =
+        '<div class="note info"><span class="ico">i</span><div>管理员审核通过后，你将可以正常使用全部功能。</div></div>' +
+        '<div class="field mt3"><label>联系邮箱</label>' + contactBlock() + '</div>' + contactTip();
+    } else if (me.status === 'banned') {
+      title.textContent = '账号已被封禁';
+      sub.textContent = '该账号已被管理员封禁，无法继续使用。';
+      body.innerHTML =
+        '<div class="note danger"><span class="ico">⚠</span><div>如有疑问，请联系站点管理员申诉。</div></div>' +
+        '<div class="field mt3"><label>联系邮箱</label>' + contactBlock() + '</div>';
+    } else {
+      /* pending_email（兜底：其他未知状态也按待邮箱确认渲染） */
+      title.textContent = '等待邮箱确认';
+      sub.textContent = '确认邮件已发送到你的注册邮箱，请按邮件中的链接完成确认。';
+      var sentWarn = confirm.sent === false
+        ? '<div class="note danger"><span class="ico">⚠</span><div>确认邮件发送失败，请联系管理员重发确认邮件。</div></div>'
+        : '';
+      body.innerHTML =
+        '<div class="note info"><span class="ico">i</span><div>确认邮件 <b>24 小时内有效</b>，请在有效期内完成确认。</div></div>' +
+        sentWarn +
+        '<div class="field mt3"><label>注册邮箱</label><div class="contact-email">' + R6T5.esc(email) + '</div></div>' +
+        '<div class="field mt3"><label>联系邮箱</label>' + contactBlock() + '</div>' + contactTip();
+    }
+
+    var copyBtn = document.getElementById('pending-copy');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async function () {
+        var ok = await copyText(contact);
+        R6T5.toast(ok ? '联系邮箱已复制' : '复制失败，请手动复制', ok ? 'ok' : 'warn');
+      });
+    }
+  }
+
   /* ================= 启动 ================= */
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -2210,6 +2463,7 @@
     else if (page === 'signup') initSignup();
     else if (page === 'files') initFiles();
     else if (page === 'account') initAccount();
+    else if (page === 'pending') initPending();
     else if (page === 'share') initShare();
   });
 
