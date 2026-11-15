@@ -132,3 +132,74 @@ td .row-actions .btn{white-space:nowrap}
   .toolbar .select{max-width:100%;flex:1 1 160px}
   #share-state .table-wrap{max-width:100%}
 }
+
+/* 边栏图标：inline SVG 跟随 .ic 的 color 与 hover/active 状态 */
+.nav a .ic{display:inline-flex;align-items:center;justify-content:center}
+.nav a .ic svg{width:17px;height:17px;display:block;stroke:currentColor}
+.brand .brand-mark{width:18px;height:18px;flex:none;display:block}
+
+/* ---------- 概览：账号来源开关横条 ---------- */
+.usource-bar{display:flex;flex-direction:column;gap:var(--s2)}
+.usource-row{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.usource-label{font-weight:600}
+.usource-info{
+  position:relative;width:22px;height:22px;border-radius:50%;border:1px solid var(--line-strong);
+  background:var(--panel-2);color:var(--muted);font-size:var(--fs-xs);
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none;
+}
+.usource-info:hover{color:var(--fg)}
+.usource-tip{
+  position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);
+  background:var(--panel-3);border:1px solid var(--line-strong);border-radius:var(--r-sm);
+  padding:8px 11px;font-size:var(--fs-xs);color:var(--fg-dim);width:240px;z-index:30;
+  box-shadow:var(--sh-2);display:none;
+}
+.usource-tip.show{display:block}
+.usource-meta{display:flex;align-items:center;gap:var(--s3);font-size:var(--fs-sm);color:var(--muted)}
+
+/* ---------- 用户列表：头像字标 ---------- */
+.table tr.user-row{cursor:pointer}
+.avatar{
+  width:30px;height:30px;border-radius:50%;flex:none;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb,var(--acc) 18%,transparent);color:var(--acc);
+  font-weight:600;font-size:var(--fs-sm);
+}
+.avatar.lg{width:44px;height:44px;font-size:var(--fs-lg)}
+.email-cell{display:flex;flex-direction:column;min-width:0}
+.email-line{font-weight:560}
+
+/* ---------- 用户详情抽屉 ---------- */
+.drawer-mask{
+  position:fixed;inset:0;z-index:55;
+  background:color-mix(in srgb,var(--bg) 70%,transparent);backdrop-filter:blur(3px);
+  opacity:0;pointer-events:none;transition:opacity var(--t);
+}
+.drawer-mask.open{opacity:1;pointer-events:auto}
+.drawer{
+  position:fixed;right:0;top:0;height:100vh;width:min(420px,100vw);z-index:56;
+  background:var(--panel);border-left:1px solid var(--line-strong);box-shadow:var(--sh-3);
+  transform:translateX(100%);transition:transform var(--t);
+  display:flex;flex-direction:column;
+}
+.drawer.open{transform:translateX(0)}
+.drawer-head{display:flex;align-items:center;gap:var(--s3);padding:var(--s4) var(--s5);border-bottom:1px solid var(--line)}
+.drawer-head h3{margin:0;flex:1}
+.drawer-body{padding:var(--s5);overflow:auto;display:flex;flex-direction:column;gap:var(--s4)}
+.drawer-user{display:flex;align-items:center;gap:var(--s3)}
+.drawer-email{font-weight:600;font-size:var(--fs-md);word-break:break-all}
+.drawer-fields{display:flex;flex-direction:column;gap:var(--s2)}
+.drawer-field{display:flex;align-items:baseline;gap:var(--s3);font-size:var(--fs-sm);padding:7px 0;border-bottom:1px dashed var(--line)}
+.drawer-field:last-child{border-bottom:0}
+.drawer-field .k{color:var(--muted);flex:none;width:110px}
+.drawer-field .v{min-width:0;word-break:break-all}
+.drawer-actions{display:flex;gap:var(--s2);flex-wrap:wrap;padding-top:var(--s3);border-top:1px solid var(--line)}
+
+/* ---------- 删号选项 ---------- */
+.del-options{display:flex;flex-direction:column;gap:var(--s2);margin-bottom:var(--s3)}
+.del-option{
+  display:flex;align-items:center;gap:var(--s2);padding:var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-md);background:var(--panel-2);cursor:pointer;
+}
+.del-option input{accent-color:var(--acc);flex:none}
+.del-warn{margin-top:var(--s2);font-size:var(--fs-sm);color:var(--danger)}

@@ -28,6 +28,7 @@
     post(p, b) { return Admin._guard(R6T5.post, p, b); },
     patch(p, b) { return Admin._guard(R6T5.patch, p, b); },
     del(p, q) { return Admin._guard(R6T5.del, p, q); },
+    put(p, b) { return Admin._guard(R6T5.request, p, { method: 'PUT', body: b || {} }); },
 
     /* ---------- 小工具 ---------- */
     esc: s => R6T5.esc(s),
@@ -130,6 +131,7 @@
     Admin.bindLogout();
     await Admin.requireAdmin();
     await Admin.loadSetupNote();
+    await initUserSource();
 
     const alertBox = Admin.$('#page-alert');
     let overview;
@@ -281,9 +283,83 @@
     ).join('');
   }
 
+  /* ---------- 概览：账号来源开关（Supabase / 数据卷） ---------- */
+  let usourceCurrent = 'supabase';
+
+  async function initUserSource() {
+    const bar = Admin.$('#user-source-bar');
+    if (!bar) return;
+    await loadUserSource();
+
+    const sw = Admin.$('#usource-switch');
+    const infoBtn = Admin.$('#usource-info-btn');
+    const tip = Admin.$('#usource-tip');
+    if (!sw) return;
+
+    const hideTip = () => tip.classList.remove('show');
+    infoBtn.addEventListener('mouseenter', () => tip.classList.add('show'));
+    infoBtn.addEventListener('mouseleave', hideTip);
+    infoBtn.addEventListener('click', e => { e.stopPropagation(); tip.classList.add('show'); });
+    document.addEventListener('click', e => { if (!infoBtn.contains(e.target)) hideTip(); });
+
+    sw.addEventListener('change', () => {
+      const target = sw.checked ? 'volume' : 'supabase';
+      // 先回到服务端当前状态；确认成功后再由 loadUserSource() 回填，避免取消 / 失败时停在错误位置
+      sw.checked = usourceCurrent === 'volume';
+      openUserSourceConfirm(target);
+    });
+  }
+
+  async function loadUserSource() {
+    const sw = Admin.$('#usource-switch');
+    const state = Admin.$('#usource-state');
+    const at = Admin.$('#usource-switched-at');
+    let d;
+    try { d = await Admin.get('/api/admin/user-source'); }
+    catch (e) { Admin.toastErr(e); return; }
+    usourceCurrent = d.userSource === 'volume' ? 'volume' : 'supabase';
+    if (sw) sw.checked = usourceCurrent === 'volume';
+    if (state) state.textContent = usourceCurrent === 'volume' ? '当前：数据卷账号' : '当前：Supabase 账号';
+    if (at) at.textContent = d.switchedAt ? '切换时间：' + Admin.time(d.switchedAt) : '';
+  }
+
+  function openUserSourceConfirm(target) {
+    const modal = Admin.$('#m-usource');
+    if (!modal) return;
+    const desc = Admin.$('#usource-modal-desc');
+    const err = Admin.$('#usource-err');
+    const confirmBtn = Admin.$('#usource-confirm');
+    err.textContent = '';
+    desc.textContent = target === 'volume'
+      ? '确认将认证来源切换为数据卷账号吗？切换后本地账号密码哈希存于数据卷。'
+      : '确认将认证来源切回 Supabase 账号吗？';
+    R6T5.modal.open('#m-usource');
+
+    const onConfirm = async () => {
+      confirmBtn.disabled = true;
+      err.textContent = '';
+      try {
+        await Admin.put('/api/admin/user-source', { source: target, confirm: true });
+        R6T5.modal.close('#m-usource');
+        R6T5.toast(target === 'volume' ? '已切换到数据卷账号管理' : '已切回 Supabase 账号管理', 'ok');
+        await loadUserSource();
+        await Admin.loadSetupNote();
+      } catch (e) {
+        err.textContent = (e && e.message) || '切换失败';
+        Admin.toastErr(e);
+        await loadUserSource(); // 失败后开关回到服务端真实状态
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    };
+    confirmBtn.onclick = onConfirm;
+  }
+
   /* ---------- 用户 users ---------- */
   let userGroups = [];
   let userSearchTimer = null;
+  let userLastQuery = '';
+  let drawerUser = null;
 
   async function initUsers() {
     Admin.bindLogout();
@@ -306,6 +382,23 @@
       clearTimeout(userSearchTimer);
       userSearchTimer = setTimeout(() => loadUsers(search.value.trim()), 300);
     });
+
+    const addBtn = Admin.$('#btn-add-user');
+    if (addBtn) addBtn.addEventListener('click', openCreateUserModal);
+
+    const createForm = Admin.$('#user-create-form');
+    if (createForm) createForm.addEventListener('submit', onCreateUserSubmit);
+
+    const pwForm = Admin.$('#user-password-form');
+    if (pwForm) pwForm.addEventListener('submit', onPasswordSubmit);
+
+    const delConfirm = Admin.$('#del-confirm');
+    if (delConfirm) delConfirm.addEventListener('click', onDeleteConfirm);
+
+    const delRadios = Admin.$$('input[name="del-files"]');
+    delRadios.forEach(r => r.addEventListener('change', syncDeleteWarn));
+
+    bindDrawer();
   }
 
   async function loadGroupsForOptions() {
@@ -381,12 +474,25 @@
     } catch (e) { Admin.toastErr(e); }
   }
 
+  function timeOrNone(t) { return t ? Admin.time(t) : '无记录'; }
+  function sourceLabel(s) { return s === 'local' ? '本地账号' : 'Supabase 账号'; }
+  function statusBadge(u) {
+    return u.status === 'banned'
+      ? '<span class="badge danger">已封禁</span>'
+      : '<span class="badge ok">正常</span>';
+  }
+  function avatarLetter(email) {
+    const ch = String(email || '?').trim().charAt(0) || '?';
+    return R6T5.esc(ch.toUpperCase());
+  }
+
   async function loadUsers(q) {
+    userLastQuery = q || '';
     const tbody = Admin.$('#user-rows');
     const alertBox = Admin.$('#page-alert');
     Admin.clearAlert(alertBox);
     let d;
-    try { d = await Admin.get('/api/admin/users', { q: q || '' }); }
+    try { d = await Admin.get('/api/admin/users', { q: userLastQuery }); }
     catch (e) { Admin.alert(alertBox, e, '用户列表读取失败'); return; }
     const items = (d && d.items) || [];
     Admin.$('#user-total').textContent = (d && d.total) != null ? d.total + ' 人' : '—';
@@ -398,15 +504,17 @@
       const opts = userGroups.map(g =>
         '<option value="' + R6T5.esc(g.id) + '"' + (g.id === u.groupId ? ' selected' : '') + '>' + R6T5.esc(g.name) + '</option>'
       ).join('');
-      const dis = !!u.disabled;
-      return '<tr data-id="' + R6T5.esc(u.id) + '">' +
-        '<td><div class="name">' + R6T5.esc(u.email) + '</div>' + (u.displayName ? '<div class="faint small">' + R6T5.esc(u.displayName) + '</div>' : '') + '</td>' +
+      return '<tr data-id="' + R6T5.esc(u.id) + '" class="user-row">' +
+        '<td><div class="name"><span class="avatar">' + avatarLetter(u.email) + '</span>' +
+        '<span class="email-cell"><span class="email-line">' + R6T5.esc(u.email) + '</span>' +
+        (u.displayName ? '<span class="faint small">' + R6T5.esc(u.displayName) + '</span>' : '') + '</span></span></div></td>' +
         '<td><select class="select cell-select" data-field="groupId">' + opts + '</select></td>' +
         '<td class="num">' + Admin.bytes(u.usedBytes) + '</td>' +
         '<td class="num">' + (u.fileCount ?? 0) + '</td>' +
-        '<td>' + Admin.ago(u.lastLoginAt) + '</td>' +
-        '<td><label class="switch"><input type="checkbox" data-field="disabled"' + (dis ? ' checked' : '') + '><span></span></label></td>' +
-        '<td>' + (dis ? '<span class="badge danger">已禁用</span>' : '<span class="badge ok">正常</span>') + '</td>' +
+        '<td>' + timeOrNone(u.registeredAt) + '</td>' +
+        '<td>' + timeOrNone(u.lastLoginAt) + '</td>' +
+        '<td>' + statusBadge(u) + '</td>' +
+        '<td><span class="badge ' + (u.source === 'local' ? 'info' : 'acc') + '">' + sourceLabel(u.source) + '</span></td>' +
         '</tr>';
     }).join('');
 
@@ -417,20 +525,201 @@
         try {
           await Admin.patch('/api/admin/users/' + encodeURIComponent(id), { groupId: sel.value });
           R6T5.toast('已调整用户组', 'ok');
-        } catch (e) { Admin.toastErr(e); await loadUsers(q); }
+        } catch (e) { Admin.toastErr(e); await loadUsers(userLastQuery); }
       });
     });
-    tbody.querySelectorAll('input[data-field="disabled"]').forEach(sw => {
-      sw.addEventListener('change', async () => {
-        const tr = sw.closest('tr');
+
+    tbody.querySelectorAll('tr.user-row').forEach(tr => {
+      tr.addEventListener('click', ev => {
+        // 行内下拉 / 开关 / 按钮 / 链接点击不触发抽屉
+        if (ev.target.closest('select,input,button,a,label')) return;
         const id = tr.dataset.id;
-        try {
-          await Admin.patch('/api/admin/users/' + encodeURIComponent(id), { disabled: sw.checked });
-          R6T5.toast(sw.checked ? '用户已禁用' : '用户已恢复', 'ok');
-          await loadUsers(q);
-        } catch (e) { Admin.toastErr(e); sw.checked = !sw.checked; }
+        const u = items.find(x => x.id === id);
+        if (u) openDrawer(u);
       });
     });
+
+    // 抽屉打开期间刷新过列表：同步抽屉里的用户数据
+    if (drawerUser) {
+      const fresh = items.find(x => x.id === drawerUser.id);
+      if (fresh) { drawerUser = fresh; renderDrawer(); }
+    }
+  }
+
+  /* ---------- 用户详情抽屉 ---------- */
+  function bindDrawer() {
+    const mask = Admin.$('#user-drawer-mask');
+    const drawer = Admin.$('#user-drawer');
+    if (!mask || !drawer) return;
+    const close = Admin.$('#drawer-close');
+    if (close) close.addEventListener('click', closeDrawer);
+    mask.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+  }
+
+  function openDrawer(u) {
+    drawerUser = u;
+    renderDrawer();
+    Admin.$('#user-drawer-mask').classList.add('open');
+    Admin.$('#user-drawer').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeDrawer() {
+    const mask = Admin.$('#user-drawer-mask');
+    const drawer = Admin.$('#user-drawer');
+    if (mask) mask.classList.remove('open');
+    if (drawer) drawer.classList.remove('open');
+    document.body.style.overflow = '';
+    drawerUser = null;
+  }
+
+  function drawerField(k, v) {
+    return '<div class="drawer-field"><span class="k">' + R6T5.esc(k) + '</span><span class="v">' + R6T5.esc(v) + '</span></div>';
+  }
+
+  function renderDrawer() {
+    const body = Admin.$('#drawer-body');
+    const u = drawerUser;
+    if (!u || !body) return;
+    const isLocal = u.source === 'local';
+    const banned = u.status === 'banned';
+    const folderHref = '/files?path=' + encodeURIComponent(u.email);
+    const pwAttr = isLocal ? '' : ' disabled title="Supabase 账号密码需在 Supabase 侧修改"';
+    body.innerHTML =
+      '<div class="drawer-user">' +
+        '<span class="avatar lg">' + avatarLetter(u.email) + '</span>' +
+        '<div class="flex1"><div class="drawer-email">' + R6T5.esc(u.email) + '</div>' +
+        '<div class="faint small">' + R6T5.esc(u.displayName || '—') + '</div></div>' +
+      '</div>' +
+      '<div class="drawer-fields">' +
+        drawerField('所属用户组', u.groupName || '未分组') +
+        drawerField('最后登录时间', timeOrNone(u.lastLoginAt)) +
+        drawerField('注册成功时间', timeOrNone(u.registeredAt)) +
+        drawerField('当前状态', banned ? '已封禁' : '正常') +
+        drawerField('账号来源', sourceLabel(u.source)) +
+      '</div>' +
+      '<div class="drawer-actions">' +
+        '<a class="btn sm" href="' + R6T5.esc(folderHref) + '" target="_blank" rel="noopener">打开用户文件夹</a>' +
+        '<button class="btn sm" type="button" id="drawer-ban">' + (banned ? '解封' : '封禁') + '</button>' +
+        '<button class="btn sm" type="button" id="drawer-password"' + pwAttr + '>修改密码</button>' +
+        '<button class="btn sm danger" type="button" id="drawer-delete">一键删号</button>' +
+      '</div>';
+
+    Admin.$('#drawer-ban').addEventListener('click', onToggleBan);
+    Admin.$('#drawer-password').addEventListener('click', openPasswordModal);
+    Admin.$('#drawer-delete').addEventListener('click', openDeleteModal);
+  }
+
+  async function onToggleBan() {
+    const u = drawerUser;
+    if (!u) return;
+    const next = u.status === 'banned' ? 'active' : 'banned';
+    try {
+      const r = await Admin.patch('/api/admin/users/' + encodeURIComponent(u.id), { status: next });
+      R6T5.toast(next === 'banned' ? '已封禁，该用户会话立即失效' : '已解封', 'ok');
+      await loadUsers(userLastQuery);
+      if (r && r.item) { drawerUser = r.item; renderDrawer(); }
+    } catch (e) { Admin.toastErr(e); }
+  }
+
+  /* ---------- 重置密码 ---------- */
+  function openPasswordModal() {
+    const u = drawerUser;
+    if (!u) return;
+    if (u.source !== 'local') { R6T5.toast('Supabase 账号密码请在 Supabase 侧修改', 'warn'); return; }
+    Admin.$('#pw-err').textContent = '';
+    Admin.$('#pw-new').value = '';
+    R6T5.modal.open('#m-user-password');
+  }
+
+  async function onPasswordSubmit(ev) {
+    ev.preventDefault();
+    const u = drawerUser;
+    const err = Admin.$('#pw-err');
+    const pw = Admin.$('#pw-new').value;
+    if (!u) return;
+    if (!pw || pw.length < 6) { err.textContent = '密码至少 6 位'; return; }
+    try {
+      await Admin.post('/api/admin/users/' + encodeURIComponent(u.id) + '/password', { password: pw });
+      R6T5.toast('密码已重置', 'ok');
+      R6T5.modal.close('#m-user-password');
+    } catch (e) {
+      err.textContent = (e && e.message) || '重置失败';
+      Admin.toastErr(e);
+    }
+  }
+
+  /* ---------- 一键删号 ---------- */
+  function openDeleteModal() {
+    const u = drawerUser;
+    if (!u) return;
+    Admin.$('#del-user-label').textContent = '确定删除账号「' + u.email + '」吗？该操作不可撤销。';
+    Admin.$('#del-sb-note').classList.toggle('hide', u.source === 'local');
+    Admin.$('#del-err').textContent = '';
+    const radio = Admin.$('input[name="del-files"][value="0"]');
+    if (radio) radio.checked = true;
+    syncDeleteWarn();
+    R6T5.modal.open('#m-user-delete');
+  }
+
+  function syncDeleteWarn() {
+    const warn = Admin.$('#del-files-warn');
+    const checked = Admin.$('input[name="del-files"]:checked');
+    if (warn) warn.classList.toggle('hide', !checked || checked.value !== '1');
+  }
+
+  async function onDeleteConfirm() {
+    const u = drawerUser;
+    const err = Admin.$('#del-err');
+    if (!u) return;
+    const checked = Admin.$('input[name="del-files"]:checked');
+    const deleteFiles = checked ? checked.value : '0';
+    err.textContent = '';
+    try {
+      const r = await Admin.del('/api/admin/users/' + encodeURIComponent(u.id), { deleteFiles });
+      R6T5.modal.close('#m-user-delete');
+      closeDrawer();
+      R6T5.toast((r && r.message) || '账号已删除', 'ok');
+      await loadUsers(userLastQuery);
+    } catch (e) {
+      err.textContent = (e && e.message) || '删除失败';
+      Admin.toastErr(e);
+    }
+  }
+
+  /* ---------- 新建账号 ---------- */
+  function openCreateUserModal() {
+    const form = Admin.$('#user-create-form');
+    if (form) form.reset();
+    Admin.$('#cu-err').textContent = '';
+    const sel = Admin.$('#cu-group');
+    if (sel) {
+      sel.innerHTML = '<option value="">未分组</option>' + userGroups.map(g =>
+        '<option value="' + R6T5.esc(g.id) + '">' + R6T5.esc(g.name) + '</option>').join('');
+    }
+    R6T5.modal.open('#m-user-create');
+  }
+
+  async function onCreateUserSubmit(ev) {
+    ev.preventDefault();
+    const err = Admin.$('#cu-err');
+    const email = Admin.$('#cu-email').value.trim().toLowerCase();
+    const password = Admin.$('#cu-password').value;
+    const displayName = Admin.$('#cu-display').value.trim();
+    const groupId = Admin.$('#cu-group').value || null;
+    if (!email) { err.textContent = '请填写邮箱'; return; }
+    if (!password || password.length < 6) { err.textContent = '密码至少 6 位'; return; }
+    try {
+      await Admin.post('/api/admin/users', { email, password, displayName, groupId });
+      R6T5.toast('账号已创建', 'ok');
+      R6T5.modal.close('#m-user-create');
+      await loadUsers(userLastQuery);
+    } catch (e) {
+      // 412 supabase_not_configured 等：后端 message 原样展示在弹窗内
+      err.textContent = (e && e.message) || '创建失败';
+      Admin.toastErr(e);
+    }
   }
 
   /* ---------- 文件系统：存储策略 / 目录绑定 / 解析预览 ---------- */
