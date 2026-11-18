@@ -163,7 +163,12 @@ PUPPETEER_DIR=<含 puppeteer-core 的目录> BASE=http://127.0.0.1:8099 ADMIN_PA
 
 > 说明：沙箱环境没有 Docker 与真实 Supabase 实例，因此 `docker compose up` 与真实 Supabase 登录未实跑，验收口径见 `docs/verify.md` §2。
 
+## 许可
+
+- 本项目自身代码：[MIT](LICENSE)（Copyright © 2026 TanchiPanda）
+- 随项目分发的依赖、以及计划接入的预览组件（pdf.js / Monaco / epub.js / Artplayer / Excalidraw / draw.io / Photopea / Google Docs Viewer / Microsoft Office 预览 / 7-Zip）的许可与使用边界，统一登记在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- 引入新的第三方组件时，请同步在该文件登记；商用嵌入第三方在线服务前，先确认其条款允许（详见该文件第二节）。
+
 ## 合规声明
 
-
-本项目功能思路参考了同类开源产品的常见做法，但**代码与界面全部自研**，未复制、未使用任何 GPL 或其它传染性许可证下的源码；依赖均为 MIT / ISC / BSD 等宽松许可。
+本项目功能思路参考了同类开源产品的常见做法，但**代码与界面全部自研**，未复制、未使用任何 GPL 或其它传染性许可证下的源码；运行时依赖均为 MIT / ISC / BSD 等宽松许可。
