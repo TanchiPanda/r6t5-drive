@@ -5,6 +5,9 @@ import { hashPassword, randomPassword } from './lib/session.js';
 import { nowIso, genId } from './lib/format.js';
 import { sweepExpired as sweepExpiredUploads } from './services/chunks.js';
 import { start as startCron } from './services/cron.js';
+import { printBanner } from './lib/banner.js';
+
+printBanner();
 
 migrate();
 
