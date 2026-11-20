@@ -586,6 +586,17 @@ body `{ code }` → `{ ok: true, unlocked: true }`，并下发 httpOnly Cookie `
 → `{ kind, name, sizeBytes, mime, language?, orientation?, strategy: { type, name }, previewable, reason? }`
 - 问询用途：不可预览时返回 `previewable:false` + 中文 `reason`（不抛 415）
 
+### POST `/api/files/embed/sign`（需登录，Body `{ path }`）
+→ `{ ok, url, provider:'gdocs'|'m365', expiresAt }`
+- 仅 Office 与 PDF；`none` 时 `400 preview_disabled`；对外地址为本机/内网 → `400 embed_requires_public_url`
+- 写审计 `embed_open` 与日志 `CHG [embed]`
+
+### GET `/api/embed/file?t=<令牌>`（免登录）
+- 随机短期令牌（内存保存，10 分钟过期，重启即失效，不含邮箱与路径明文）
+- 仅 `inline` 输出 Office/PDF，`Cache-Control: no-store`、`X-Robots-Tag: noindex`；无效/过期 → `401 embed_token_invalid`
+- meta 额外字段：Office 返回 `kind:'office'` + `openWith`（`none|gdocs|m365`），PDF 返回 `pdfMode`（`pdfjs|native`）
+
+
 ## P3-4 管理端分享（`/api/admin/shares`，需管理员会话）
 
 ### GET `/api/admin/shares?status=&email=&limit=`

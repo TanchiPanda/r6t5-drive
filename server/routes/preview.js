@@ -6,6 +6,7 @@ import { ApiError, notFound } from '../lib/errors.js';
 import { resolveStorage } from '../services/bindings.js';
 import { getNodeByPath } from '../services/nodes.js';
 import { sendPreview, classify, previewable, unsupportedReason } from '../services/preview.js';
+import { extOfPath, OFFICE_EXT, readPreviewConfig } from '../services/preview-config.js';
 
 const router = Router();
 
@@ -43,12 +44,25 @@ router.get('/meta', async (req, res, next) => {
     } catch { /* 策略解析失败也回 meta，由前端展示不可预览 */ }
 
     const classification = classify(logical, node?.mime);
+    const cfg = readPreviewConfig();
+    const ext = extOfPath(logical);
+    const isOffice = OFFICE_EXT.includes(ext);
     const name = logical.split('/').pop();
     const sizeBytes = node ? Number(node.sizeBytes) : null;
-    const ok = previewable(classification);
+    let ok = previewable(classification);
+    let kind = classification.kind;
+    let reason = ok ? '' : unsupportedReason(classification);
+    if (isOffice) {
+      // Office 文档统一交给外部在线渲染（Google Docs / Microsoft 365），未启用则明确提示
+      kind = 'office';
+      ok = cfg.office !== 'none';
+      reason = ok ? '' : '站点未启用 Office 在线打开方式，可在「设置 → 预览」选择 Google Docs 或 Microsoft 365';
+    }
 
     res.json({
-      kind: classification.kind,
+      kind,
+      openWith: kind === 'office' ? cfg.office : (kind === 'pdf' ? cfg.pdf : undefined),
+      pdfMode: kind === 'pdf' ? cfg.pdf : undefined,
       name,
       sizeBytes,
       mime: classification.mime,
@@ -56,7 +70,7 @@ router.get('/meta', async (req, res, next) => {
       orientation: undefined, // 方向需在实际请求 exif=1 时由图片响应头给出
       strategy: strategy ? { type: strategy.type, name: strategy.name } : null,
       previewable: ok,
-      reason: ok ? '' : unsupportedReason(classification),
+      reason,
     });
   } catch (e) { next(e); }
 });

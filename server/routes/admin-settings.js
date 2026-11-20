@@ -3,6 +3,7 @@ import { db, getSetting, setSetting } from '../db.js';
 import { nowIso } from '../lib/format.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { writeAudit } from '../services/audit.js';
+import { readPreviewConfig } from '../services/preview-config.js';
 
 const router = Router();
 
@@ -19,6 +20,7 @@ function readSettings() {
     trashRetentionDays: Number(getSetting('trashRetentionDays', '30')),
     themeDefault: getSetting('themeDefault', 'dark'),
     maxUploadMb: Number(getSetting('maxUploadMb', '2048')),
+    preview: readPreviewConfig(),
     updatedAt: getSetting('settings_updated_at', null),
     defaults: {
       siteName: !siteName || siteName === 'R6T5 Drive',
@@ -61,6 +63,19 @@ router.patch('/', (req, res, next) => {
       }
     }
     if (body.allowSignup != null) setSetting('allowSignup', body.allowSignup ? 'true' : 'false');
+    if (body.preview != null) {
+      const preview = body.preview || {};
+      if (preview.office != null) {
+        const v = String(preview.office);
+        if (!['none', 'gdocs', 'm365'].includes(v)) throw badRequest('invalid_input', 'Office 打开方式非法', { field: 'preview.office' });
+        setSetting('preview_office', v);
+      }
+      if (preview.pdf != null) {
+        const v = String(preview.pdf);
+        if (!['pdfjs', 'native'].includes(v)) throw badRequest('invalid_input', 'PDF 打开方式非法', { field: 'preview.pdf' });
+        setSetting('preview_pdf', v);
+      }
+    }
     if (body.trashRetentionDays != null) {
       const n = Number(body.trashRetentionDays);
       if (!Number.isFinite(n) || n < 1 || n > 365) throw badRequest('invalid_input', '回收站保留天数需为 1–365', { field: 'trashRetentionDays' });

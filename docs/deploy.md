@@ -315,3 +315,22 @@ docker compose logs drive | grep 'action=settings_update'   # 只看设置变更
 | `LOG_LEVEL=error` | 只输出 ERR |
 
 > 日志不记录密码、会话 Cookie、应用密码、OAuth token 与文件内容；`CHG` 行里的 `detail` 只包含动作来源（如 `local`、`sudo`、`siteName` 这类键名）。
+
+## 11. 在线打开方式（Office / PDF）
+
+文件预览默认只读，按类型走不同通道；管理员可在「设置 → 预览」切换。
+
+| 类型 | 方式 | 说明 |
+| --- | --- | --- |
+| PDF | `pdfjs`（默认） | 内置 PDF.js（`public/vendor/pdfjs/`，Apache-2.0），支持翻页与缩放，不依赖外网 |
+| PDF | `native` | 交给浏览器内置阅读器（iframe），兼容性最好但样式不可控 |
+| Office（doc/docx/xls/xlsx/ppt/pptx/odt/ods/odp/rtf） | `none`（默认） | 不提供在线打开，只能下载 |
+| Office | `gdocs` | 嵌入 Google Docs Viewer，文件由 Google 读取 |
+| Office | `m365` | 嵌入 Microsoft 365（Office for the web），文件由微软读取 |
+
+启用外部打开方式的前提：
+
+1. 「设置 → 站点 → 对外地址」必须填公网可访问的 `publicUrl`（`http://localhost`、`127.0.0.1`、内网段会被拒绝）；
+2. 文件通过 `/api/embed/file?t=<随机令牌>` 免登录读取，令牌 10 分钟过期、进程重启即失效、不含邮箱与路径明文；
+3. 每次打开会写审计 `embed_open` 与日志 `CHG [embed] 生成外部预览链接`；
+4. 外部服务可能缓存或记录文件内容，私有文件建议保持 `none` 或改用 OnlyOffice 自托管。

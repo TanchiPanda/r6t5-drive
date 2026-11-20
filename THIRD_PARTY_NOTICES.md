@@ -16,13 +16,13 @@
 
 ## 二、计划接入的预览组件
 
-按扩展分组逐个启用，启用前必须核对下表条款。**当前仓库尚未打包这些文件**，仅记录许可与使用边界。
+按扩展分组逐个启用，启用前必须核对下表条款。**当前仓库已打包 pdf.js（`public/vendor/pdfjs/`）**，其余组件仍只是规划，尚未打包。
 
 ### 1. 可自托管、可随项目分发
 
 | 组件 | 许可 | 使用要求 |
 | --- | --- | --- |
-| pdf.js（Mozilla） | Apache-2.0 | 保留 `NOTICE` 与版权头，修改文件需标注 |
+| pdf.js（Mozilla） | Apache-2.0 | 已打包在 `public/vendor/pdfjs/`（含 `LICENSE`），未修改源码；升级时整包替换 |
 | Monaco Editor（Microsoft） | MIT | 保留许可声明 |
 | epub.js（futurepress） | BSD-2-Clause | 保留版权与许可全文 |
 | Artplayer | MIT | 保留许可声明 |
@@ -37,8 +37,8 @@
 | --- | --- | --- |
 | Photopea | 官方允许在任意网站免费 iframe 嵌入，带广告与其品牌；白标需成为 Distributor | 不得去广告、不得替换其 Logo/品牌、不得二次分发其代码 |
 | draw.io / diagrams.net | 编辑器 Apache-2.0；名称与图标为 JGraph 商标 | 用官方 embed 模式；界面里不复制其彩色 Logo，文案可写「用 draw.io 打开」 |
-| Google Docs Viewer | 无第三方嵌入专用条款，属灰色地带 | 默认关闭；仅对公开文件启用，并在启用处提示「文件 URL 将发送给 Google」 |
-| Microsoft Office 在线预览 | 官方支持 iframe 嵌入，前提是文档已对外共享 | 仅对公开/短期签名 URL 生效；私有文件不提供入口 |
+| Google Docs Viewer | 无第三方嵌入专用条款，属灰色地带 | 默认关闭；由管理员在「设置 → 预览」显式开启；只传 10 分钟有效的随机签名 URL（不含邮箱、不含 Cookie），界面提示「文件 URL 将发送给 Google」 |
+| Microsoft 365（Office for the web） | 官方支持 iframe 嵌入，前提是文档可被公开读取 | 同上：默认关闭、仅短期签名 URL、不含用户身份信息；离线/内网部署不提示启用 |
 
 以上四个服务的共同约束：
 - **默认关闭**，由管理员按扩展单独开启，并明确提示文件会离开本服务器；

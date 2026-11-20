@@ -260,6 +260,7 @@
 
   var Preview = {
     mask: null, body: null, title: null, objectUrl: null, bound: false,
+    opts: null, pdfDoc: null, pdfTask: null, _pdfjs: null,
 
     ensure() {
       this.mask = document.getElementById('m-preview') || document.getElementById('m-share-preview');
@@ -287,11 +288,13 @@
     open(opts) {
       this.ensure();
       this.revokeObjectUrl();
+      this.destroyPdf();
+      this.opts = opts || {};
       this.title.textContent = opts.title || '预览';
       this.body.innerHTML = '<div class="skel" style="height:180px"></div>';
       this.mask.classList.add('open');
       document.body.style.overflow = 'hidden';
-      this.render(opts.url, opts.kind, opts.name);
+      this.render(opts.url, opts.kind, opts.name, opts);
     },
 
     close() {
@@ -299,6 +302,7 @@
       this.mask.classList.remove('open');
       document.body.style.overflow = '';
       this.revokeObjectUrl();
+      this.destroyPdf();
       if (this.body) this.body.innerHTML = '';
     },
 
@@ -306,12 +310,22 @@
       if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
     },
 
-    async render(url, kind, name) {
+    destroyPdf() {
+      if (this.pdfTask) { try { this.pdfTask.destroy(); } catch (_) {} this.pdfTask = null; }
+      if (this._pdfResizeHandler) {
+        window.removeEventListener('resize', this._pdfResizeHandler);
+        this._pdfResizeHandler = null;
+      }
+      this.pdfDoc = null;
+    },
+
+    async render(url, kind, name, opts) {
       var body = this.body;
       try {
         if (kind === 'image') await this.renderImage(url, body);
         else if (kind === 'video') this.renderVideo(url, body);
-        else if (kind === 'pdf') this.renderPdf(url, body);
+        else if (kind === 'pdf') await this.renderPdf(url, body, opts || {});
+        else if (kind === 'office') await this.renderOffice(body, opts || {});
         else if (kind === 'markdown') await this.renderMarkdown(url, body);
         else if (kind === 'text') await this.renderText(url, body);
         else this.renderUnsupported(body, name);
@@ -346,8 +360,135 @@
         '<video controls preload="metadata" src="' + url + '"></video></div>';
     },
 
-    renderPdf(url, body) {
-      body.innerHTML = '<div class="pv-media pv-pdf"><iframe src="' + url + '" title="PDF 预览"></iframe></div>';
+    async renderPdf(url, body, opts) {
+      if ((opts && opts.pdfMode) === 'native') {
+        body.innerHTML = '<div class="pv-media pv-pdf"><iframe src="' + url + '" title="PDF 预览"></iframe></div>';
+        return;
+      }
+      try {
+        await this.renderPdfjs(url, body);
+      } catch (e) {
+        // PDF.js 不可用时退回浏览器原生渲染，不阻断查看
+        body.innerHTML = '<div class="pv-note faint small">PDF.js 加载失败，已退回浏览器内置阅读器</div>' +
+          '<div class="pv-media pv-pdf"><iframe src="' + url + '" title="PDF 预览"></iframe></div>';
+      }
+    },
+
+    async ensurePdfjs() {
+      if (this._pdfjs) return this._pdfjs;
+      var mod = await import('/vendor/pdfjs/pdf.min.mjs');
+      mod.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+      this._pdfjs = mod;
+      return mod;
+    },
+
+    async renderPdfjs(url, body) {
+      var pdfjs = await this.ensurePdfjs();
+      var res = await this.handleRes(await fetch(url, { credentials: 'same-origin' }));
+      var bytes = new Uint8Array(await res.arrayBuffer());
+      var task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+      this.pdfTask = task;
+      var doc = await task.promise;
+      this.pdfDoc = doc;
+
+      body.innerHTML =
+        '<div class="pv-pdfbar">' +
+          '<button class="btn icon" type="button" id="pv-prev" title="上一页">‹</button>' +
+          '<span class="pv-pager"><input class="input pv-page" id="pv-page" type="number" min="1" value="1"> / <span id="pv-total">' + doc.numPages + '</span></span>' +
+          '<button class="btn icon" type="button" id="pv-next" title="下一页">›</button>' +
+          '<span class="spacer"></span>' +
+          '<button class="btn icon" type="button" id="pv-zoom-out" title="缩小">−</button>' +
+          '<span class="pv-zoom" id="pv-zoom">100%</span>' +
+          '<button class="btn icon" type="button" id="pv-zoom-in" title="放大">＋</button>' +
+        '</div>' +
+        '<div class="pv-pdfpage"><canvas id="pv-canvas"></canvas></div>';
+
+      var canvas = body.querySelector('#pv-canvas');
+      var ctx = canvas.getContext('2d');
+      var state = { page: 1, zoom: 1, fit: 1, rendering: false, pending: false };
+      var self = this;
+
+      async function draw() {
+        if (state.rendering) { state.pending = true; return; }
+        state.rendering = true;
+        try {
+          var page = await doc.getPage(state.page);
+          var base = page.getViewport({ scale: 1 });
+          var wrap = body.querySelector('.pv-pdfpage');
+          var avail = Math.max(320, (wrap ? wrap.clientWidth : 760) - 2);
+          var fit = avail / base.width;
+          var ratio = Math.min(window.devicePixelRatio || 1, 2);
+          var scale = fit * state.zoom;
+          var viewport = page.getViewport({ scale: scale });
+          canvas.width = Math.floor(viewport.width * ratio);
+          canvas.height = Math.floor(viewport.height * ratio);
+          canvas.style.width = Math.floor(viewport.width) + 'px';
+          canvas.style.height = Math.floor(viewport.height) + 'px';
+          ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+          await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+          var pageInput = body.querySelector('#pv-page');
+          if (pageInput) pageInput.value = String(state.page);
+          body.querySelector('#pv-zoom').textContent = Math.round(state.zoom * 100) + '%';
+        } finally {
+          state.rendering = false;
+          if (state.pending) { state.pending = false; draw(); }
+        }
+      }
+
+      function go(delta) {
+        var next = Math.min(doc.numPages, Math.max(1, state.page + delta));
+        if (next === state.page) return;
+        state.page = next;
+        draw();
+      }
+
+      body.querySelector('#pv-prev').addEventListener('click', function () { go(-1); });
+      body.querySelector('#pv-next').addEventListener('click', function () { go(1); });
+      body.querySelector('#pv-page').addEventListener('change', function (e) {
+        var n = Number(e.target.value);
+        if (!Number.isFinite(n)) return;
+        state.page = Math.min(doc.numPages, Math.max(1, Math.trunc(n)));
+        draw();
+      });
+      body.querySelector('#pv-zoom-in').addEventListener('click', function () {
+        state.zoom = Math.min(3, state.zoom + 0.25); draw();
+      });
+      body.querySelector('#pv-zoom-out').addEventListener('click', function () {
+        state.zoom = Math.max(0.5, state.zoom - 0.25); draw();
+      });
+      var resizeTimer = null;
+      var onResize = function () {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function () { if (self.pdfDoc === doc) draw(); }, 120);
+      };
+      window.addEventListener('resize', onResize);
+      this._pdfResizeHandler = onResize;
+
+      await draw();
+    },
+
+    async renderOffice(body, opts) {
+      var path = opts && opts.path;
+      if (!path) { this.renderUnsupported(body); return; }
+      body.innerHTML = '<div class="skel" style="height:220px"></div>';
+      var signed;
+      try {
+        signed = await R6T5.post('/api/files/embed/sign', { path: path });
+      } catch (e) {
+        body.innerHTML = '<div class="empty"><div class="ico">▤</div><h3>无法在线打开</h3>' +
+          '<p>' + R6T5.esc(previewErrText(e)) + '</p></div>';
+        return;
+      }
+      var provider = signed.provider === 'm365' ? 'Microsoft 365' : 'Google Docs';
+      var embedUrl = signed.provider === 'm365'
+        ? 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(signed.url)
+        : 'https://docs.google.com/viewer?url=' + encodeURIComponent(signed.url) + '&embedded=true';
+      body.innerHTML =
+        '<div class="pv-office-note"><span class="badge info">' + provider + '</span>' +
+        '<span class="faint small">由外部在线服务渲染，文件链接 10 分钟后自动失效</span>' +
+        '<span class="spacer"></span>' +
+        '<a class="btn sm ghost" href="' + R6T5.esc(signed.url) + '" target="_blank" rel="noopener noreferrer">在新窗口打开</a></div>' +
+        '<div class="pv-office"><iframe src="' + embedUrl + '" title="Office 在线预览" referrerpolicy="no-referrer"></iframe></div>';
     },
 
     async renderText(url, body) {
@@ -988,7 +1129,15 @@
       return;
     }
     var url = '/api/files/preview?' + R6T5.qs({ path: item.path, exif: 1 });
-    Preview.open({ title: item.name, url: url, kind: meta.kind, name: item.name });
+    Preview.open({
+      title: item.name,
+      url: url,
+      kind: meta.kind,
+      name: item.name,
+      path: item.path,
+      pdfMode: meta.pdfMode || meta.openWith,
+      openWith: meta.openWith,
+    });
   }
 
   /* ---------- 创建分享 ---------- */

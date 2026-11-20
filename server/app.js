@@ -27,6 +27,7 @@ import accountRouter from './routes/account.js';
 import sharesRouter, { publicRouter as sharePublicRouter } from './routes/shares.js';
 import adminSharesRouter from './routes/admin-shares.js';
 import previewRouter from './routes/preview.js';
+import { signRouter as embedSignRouter, publicRouter as embedPublicRouter } from './routes/embed.js';
 import uploadsRouter from './routes/uploads.js';
 import archiveRouter from './routes/archive.js';
 import mediaRouter from './routes/media.js';
@@ -130,6 +131,8 @@ app.get('/manifest.webmanifest', manifestHandler);
 
 // ---- 用户端文件 / 回收站 / 账号 ----
 // 预览必须挂在 /api/files 之前，否则会被 filesRouter 的根路由吃掉
+app.use('/api/embed', embedPublicRouter);
+app.use('/api/files/embed', requireUser, embedSignRouter);
 app.use('/api/files/preview', requireUser, previewRouter);
 // Office 免登录 HMAC 回源/回调必须挂在登录守卫之前
 app.use('/api/files', officePublicRouter);

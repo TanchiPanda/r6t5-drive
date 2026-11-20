@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { getDriver } from './storage/driver.js';
+import { extOfPath, OFFICE_EXT, OFFICE_MIME } from './preview-config.js';
 import { renderMarkdown, assertSafeHtml } from '../lib/markdown.js';
 import {
   notFound, previewUnsupported, previewTooLarge, storageError, badRequest, ApiError,
@@ -85,6 +86,28 @@ export function unsupportedReason(classification) {
   if (classification.kind === 'svg') return 'SVG 含可执行脚本，出于安全考虑不支持在线预览，请下载查看';
   if (classification.kind === 'unsupported') return '该文件类型暂不支持在线预览，请下载查看';
   return '';
+}
+
+/**
+ * 外部在线渲染（Google Docs / Microsoft 365）取文件：仅 Office 与 PDF，原样 inline 输出。
+ * 调用方负责令牌校验；这里只做类型与大小保护。
+ */
+export async function sendEmbedFile({ req, res, strategy, logicalPath, node }) {
+  const ext = extOfPath(logicalPath);
+  if (ext !== 'pdf' && !OFFICE_EXT.includes(ext)) {
+    throw previewUnsupported({ reason: 'embed_unsupported' });
+  }
+  const mime = ext === 'pdf' ? PDF_MIME : (OFFICE_MIME[ext] || 'application/octet-stream');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  await sendBinary({
+    res,
+    strategy,
+    logicalPath,
+    node,
+    classification: { kind: 'binary', mime },
+    req,
+    rangeHeader: null,
+  });
 }
 
 // ---- 远端 / 本地读取辅助 ----

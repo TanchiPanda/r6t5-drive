@@ -16,7 +16,7 @@ const VALID_ACTIONS = new Set([
   // P9-C 积分 / 商店 / 兑换码 / 付费分享
   'order_mark_paid', 'order_refund', 'order_cancel', 'points_adjust',
   'redeem_generate', 'redeem_used', 'product_update', 'group_expired',
-  'expire_notice', 'share_purchase',
+  'expire_notice', 'share_purchase', 'embed_open',
 ]);
 
 // 审计动作 → 日志里的中文说明。未登记的动作退回英文 action。
@@ -59,6 +59,7 @@ const ACTION_LABELS = {
   product_update: '商品变更',
   group_expired: '用户组到期',
   expire_notice: '到期通知',
+  embed_open: '外部在线打开',
 };
 
 export function writeAudit({ email, action, target = null, bytes = null, ip = null, detail = null }) {

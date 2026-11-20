@@ -283,6 +283,22 @@
                   <input class="input" id="f-trashRetentionDays" name="trashRetentionDays" type="number" min="1" step="1">
                 </div>
                 <div class="field">
+                  <label for="f-previewOffice">Office 在线打开</label>
+                  <select class="select" id="f-previewOffice" name="previewOffice">
+                    <option value="none">关闭（仅下载）</option>
+                    <option value="gdocs">Google Docs Viewer</option>
+                    <option value="m365">Microsoft 365（Office for the web）</option>
+                  </select>
+                  <p class="hint">外部服务需要公网可访问的「对外地址」；文件链接有效期 10 分钟，默认关闭。</p>
+                </div>
+                <div class="field">
+                  <label for="f-previewPdf">PDF 打开方式</label>
+                  <select class="select" id="f-previewPdf" name="previewPdf">
+                    <option value="pdfjs">内置 PDF.js（推荐）</option>
+                    <option value="native">浏览器内置阅读器</option>
+                  </select>
+                </div>
+                <div class="field">
                   <label>注册策略</label>
                   <label class="check"><input type="checkbox" id="f-allowSignup" name="allowSignup"><span>允许访客自助注册</span></label>
                 </div>

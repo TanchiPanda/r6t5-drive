@@ -1860,6 +1860,8 @@
     f.allowSignup.checked = !!s.allowSignup;
     f.trashRetentionDays.value = s.trashRetentionDays ?? 30;
     f.themeDefault.value = s.themeDefault || 'dark';
+    if (f.previewOffice) f.previewOffice.value = (s.preview && s.preview.office) || 'none';
+    if (f.previewPdf) f.previewPdf.value = (s.preview && s.preview.pdf) || 'pdfjs';
 
     const gsel = f.defaultGroupId;
     gsel.innerHTML = settingGroups.map(g =>
@@ -1991,7 +1993,11 @@
       defaultGroupId: f.defaultGroupId.value,
       allowSignup: f.allowSignup.checked,
       trashRetentionDays: Number(f.trashRetentionDays.value),
-      themeDefault: f.themeDefault.value
+      themeDefault: f.themeDefault.value,
+      preview: {
+        office: f.previewOffice ? f.previewOffice.value : undefined,
+        pdf: f.previewPdf ? f.previewPdf.value : undefined,
+      }
     };
     try {
       await Admin.patch('/api/admin/settings', body);
