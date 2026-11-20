@@ -107,7 +107,7 @@
     var lines = [
       '<div class="k faint">应付金额</div>',
       '<div class="v">' + money(info.amountMinor) + '</div>',
-      '<div class="note mt2"><span class="ico">i</span><div>' + R6T5.esc(info.payInstructions || '请按管理员说明付款。') + '</div></div>',
+      '<div class="note mt2"><span class="ico">' + svgIcon('info') + '</span><div>' + R6T5.esc(info.payInstructions || '请按管理员说明付款。') + '</div></div>',
       '<p class="d mt2">付款后把订单号发给管理员，标记已支付后权益自动到账。订单号：<code>' + R6T5.esc(info.orderNo) + '</code></p>'
     ];
     $('#order-body').innerHTML = lines.join('');
@@ -178,13 +178,13 @@
       var res = await R6T5.get('/api/store/redeem/' + encodeURIComponent(code) + '/preview');
       var item = res.item || {};
       box.innerHTML = '<div class="note ' + (item.available ? 'ok' : 'warn') + '"><span class="ico">' +
-        (item.available ? '✓' : '!') + '</span><div>' +
+        svgIcon(item.available ? 'check' : 'alert') + '</span><div>' +
         (item.available
           ? '可兑换：' + R6T5.esc(describeCode(item))
           : '暂时不可兑换：' + R6T5.esc(redeemErrorText({ code: item.reason }))) +
         '</div></div>';
     } catch (e) {
-      box.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' + R6T5.esc(redeemErrorText(e)) + '</div></div>';
+      box.innerHTML = '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>' + R6T5.esc(redeemErrorText(e)) + '</div></div>';
     }
   }
 
@@ -198,13 +198,13 @@
     btn.textContent = '兑换中…';
     try {
       var res = await R6T5.post('/api/store/redeem', { code: code });
-      $('#redeem-result').innerHTML = '<div class="note ok"><span class="ico">✓</span><div>兑换成功' +
+      $('#redeem-result').innerHTML = '<div class="note ok"><span class="ico">' + svgIcon('check') + '</span><div>兑换成功' +
         ('：' + R6T5.esc(describeCode(res || {}))) + '</div></div>';
       R6T5.toast('兑换成功', 'ok');
       $('#redeem-code').value = '';
       await refreshMe();
     } catch (e) {
-      $('#redeem-result').innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' +
+      $('#redeem-result').innerHTML = '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>' +
         R6T5.esc(redeemErrorText(e)) + '</div></div>';
       R6T5.toastError(e);
     } finally {

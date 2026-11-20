@@ -359,7 +359,7 @@
         else if (kind === 'text') await this.renderText(url, body);
         else this.renderUnsupported(body, name);
       } catch (e) {
-        body.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' +
+        body.innerHTML = '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>' +
           R6T5.esc(previewErrText(e)) + '</div></div>';
       }
     },
@@ -1335,7 +1335,7 @@
     var result = document.getElementById('share-result');
     result.classList.remove('hide');
     result.innerHTML =
-      '<div class="note ok"><span class="ico">✓</span><div><b>分享链接已创建</b>' +
+      '<div class="note ok"><span class="ico">' + svgIcon('check') + '</span><div><b>分享链接已创建</b>' +
       (item.hasCode ? ' · 提取码已设置' : '') + '</div></div>' +
       '<div class="share-link-row mt3">' +
       '<input class="input flex1 mono-sm" id="share-link-input" readonly value="' + R6T5.esc(link) + '">' +
@@ -2165,7 +2165,7 @@
         '</div>'
       : '';
     result.innerHTML =
-      '<div class="note ok"><span class="ico">✓</span><div>解压完成：新增 ' + (res.extracted || 0) +
+      '<div class="note ok"><span class="ico">' + svgIcon('check') + '</span><div>解压完成：新增 ' + (res.extracted || 0) +
       ' 个文件' + ((res.skipped || []).length ? '，跳过 ' + res.skipped.length + ' 个' : '') +
       '，共 ' + R6T5.fmtBytes(res.totalBytes) + '</div></div>' + skipHtml;
   }
@@ -2469,7 +2469,7 @@
       case 'storage_not_configured': title = '暂不可用'; msg = '站点还没有可用的存储策略，请稍后再试。'; break;
       default: title = '访问失败'; msg = (e && e.message) || '请稍后重试。';
     }
-    return '<div class="note danger share-error"><span class="ico">⚠</span><div>' +
+    return '<div class="note danger share-error"><span class="ico">' + svgIcon('alert') + '</span><div>' +
       '<b>' + R6T5.esc(title) + '</b><p class="mt1 mb0">' + R6T5.esc(msg) + '</p></div></div>';
   }
 
@@ -2608,9 +2608,9 @@
         if (res && res.recoverToken) { /* 已登录购买无需凭证 */ }
       } catch (e) {
         if (e && e.status === 401) {
-          box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>需要登录才能用积分支付，<a href="/login">去登录</a>。</div></div>';
+          box.innerHTML = '<div class="note warn"><span class="ico">' + svgIcon('alert') + '</span><div>需要登录才能用积分支付，<a href="/login">去登录</a>。</div></div>';
         } else {
-          box.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' + R6T5.esc((e && e.message) || '支付失败') + '</div></div>';
+          box.innerHTML = '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>' + R6T5.esc((e && e.message) || '支付失败') + '</div></div>';
         }
         btnPts.disabled = false;
       }
@@ -2624,12 +2624,12 @@
       box.innerHTML = '';
       try {
         var order = await R6T5.post('/api/shares/' + encodeURIComponent(PublicShare.token) + '/orders', { email: email || null });
-        box.innerHTML = '<div class="note ok"><span class="ico">✓</span><div>订单已创建：<code>' + R6T5.esc(order.orderNo) +
+        box.innerHTML = '<div class="note ok"><span class="ico">' + svgIcon('check') + '</span><div>订单已创建：<code>' + R6T5.esc(order.orderNo) +
           '</code><br>付款后请把订单号与恢复凭证交给管理员；凭证：<code>' + R6T5.esc(order.recoverToken || '') +
           '</code></div></div><p class="d mt2">管理员标记已支付后，用上面的「恢复购买」即可解锁。</p>';
         R6T5.toast('订单已创建', 'ok');
       } catch (e) {
-        box.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' + R6T5.esc((e && e.message) || '下单失败') + '</div></div>';
+        box.innerHTML = '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>' + R6T5.esc((e && e.message) || '下单失败') + '</div></div>';
         btnCash.disabled = false;
       }
     });
@@ -2639,16 +2639,16 @@
       var box = document.getElementById('pay-result');
       var orderNo = (document.getElementById('pay-order-no').value || '').trim();
       var recover = (document.getElementById('pay-recover').value || '').trim();
-      if (!orderNo || !recover) { box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>订单号和恢复凭证都要填。</div></div>'; return; }
+      if (!orderNo || !recover) { box.innerHTML = '<div class="note warn"><span class="ico">' + svgIcon('alert') + '</span><div>订单号和恢复凭证都要填。</div></div>'; return; }
       try {
         var o = await R6T5.get('/api/orders/' + encodeURIComponent(orderNo), { recover: recover });
         if (o.status !== 'paid') {
-          box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>订单当前状态：' + R6T5.esc(o.status) + '，尚未支付。</div></div>';
+          box.innerHTML = '<div class="note warn"><span class="ico">' + svgIcon('alert') + '</span><div>订单当前状态：' + R6T5.esc(o.status) + '，尚未支付。</div></div>';
           return;
         }
         location.href = '/share/' + encodeURIComponent(PublicShare.token) + '?recover=' + encodeURIComponent(recover);
       } catch (e) {
-        box.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>订单号或恢复凭证不正确。</div></div>';
+        box.innerHTML = '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>订单号或恢复凭证不正确。</div></div>';
       }
     });
   }
@@ -2708,7 +2708,7 @@
     try {
       res = await R6T5.get('/api/share/' + encodeURIComponent(PublicShare.token) + '/list', { path: path || '', recover: PublicShare.recover || undefined });
     } catch (e) {
-      listBox.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' +
+      listBox.innerHTML = '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>' +
         R6T5.esc((e && e.message) || '目录读取失败') + '</div></div>';
       return;
     }
@@ -2790,7 +2790,7 @@
     var contact = confirm.contactEmail || '';
 
     function contactBlock() {
-      if (!contact) return '<div class="note warn"><span class="ico">!</span><div>请联系站点管理员开通账号。</div></div>';
+      if (!contact) return '<div class="note warn"><span class="ico">' + svgIcon('alert') + '</span><div>请联系站点管理员开通账号。</div></div>';
       return '<div class="contact-row">' +
         '<span class="contact-email">' + R6T5.esc(contact) + '</span>' +
         '<button class="btn sm ghost" type="button" id="pending-copy">复制</button></div>';
@@ -2803,23 +2803,23 @@
       title.textContent = '等待管理员审核';
       sub.textContent = '本站未启用邮件确认，账号需要管理员手动开通。';
       body.innerHTML =
-        '<div class="note info"><span class="ico">i</span><div>管理员审核通过后，你将可以正常使用全部功能。</div></div>' +
+        '<div class="note info"><span class="ico">' + svgIcon('info') + '</span><div>管理员审核通过后，你将可以正常使用全部功能。</div></div>' +
         '<div class="field mt3"><label>联系邮箱</label>' + contactBlock() + '</div>' + contactTip();
     } else if (me.status === 'banned') {
       title.textContent = '账号已被封禁';
       sub.textContent = '该账号已被管理员封禁，无法继续使用。';
       body.innerHTML =
-        '<div class="note danger"><span class="ico">⚠</span><div>如有疑问，请联系站点管理员申诉。</div></div>' +
+        '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>如有疑问，请联系站点管理员申诉。</div></div>' +
         '<div class="field mt3"><label>联系邮箱</label>' + contactBlock() + '</div>';
     } else {
       /* pending_email（兜底：其他未知状态也按待邮箱确认渲染） */
       title.textContent = '等待邮箱确认';
       sub.textContent = '确认邮件已发送到你的注册邮箱，请按邮件中的链接完成确认。';
       var sentWarn = confirm.sent === false
-        ? '<div class="note danger"><span class="ico">⚠</span><div>确认邮件发送失败，请联系管理员重发确认邮件。</div></div>'
+        ? '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>确认邮件发送失败，请联系管理员重发确认邮件。</div></div>'
         : '';
       body.innerHTML =
-        '<div class="note info"><span class="ico">i</span><div>确认邮件 <b>24 小时内有效</b>，请在有效期内完成确认。</div></div>' +
+        '<div class="note info"><span class="ico">' + svgIcon('info') + '</span><div>确认邮件 <b>24 小时内有效</b>，请在有效期内完成确认。</div></div>' +
         sentWarn +
         '<div class="field mt3"><label>注册邮箱</label><div class="contact-email">' + R6T5.esc(email) + '</div></div>' +
         '<div class="field mt3"><label>联系邮箱</label>' + contactBlock() + '</div>' + contactTip();

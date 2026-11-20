@@ -49,9 +49,9 @@ brandingAssetRouter.get('/:name', (req, res, next) => {
 });
 
 /* ---------- PWA manifest：GET /manifest.webmanifest（免登录） ---------- */
-// 颜色取 tokens.css 深色主色（--acc / --bg），见 public/assets/tokens.css
-const MANIFEST_THEME_COLOR = '#4a9e6e';
-const MANIFEST_BACKGROUND_COLOR = '#0e1512';
+// 颜色取 tokens.css 浅色主色（--acc / --bg），见 public/assets/tokens.css
+const MANIFEST_THEME_COLOR = '#2f8f61';
+const MANIFEST_BACKGROUND_COLOR = '#f5f8f5';
 
 export function manifestHandler(req, res) {
   const cfg = currentConfig();

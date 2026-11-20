@@ -18,7 +18,7 @@ function readSettings() {
     defaultStorageId: getSetting('defaultStorageId', null),
     allowSignup: getSetting('allowSignup', 'false') === 'true',
     trashRetentionDays: Number(getSetting('trashRetentionDays', '30')),
-    themeDefault: getSetting('themeDefault', 'dark'),
+    themeDefault: getSetting('themeDefault', 'light'),
     maxUploadMb: Number(getSetting('maxUploadMb', '2048')),
     preview: readPreviewConfig(),
     updatedAt: getSetting('settings_updated_at', null),

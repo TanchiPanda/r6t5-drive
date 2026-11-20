@@ -1,43 +1,44 @@
 /* R6T5 Drive · 设计令牌（唯一颜色/排版来源，所有页面只允许引用这里的变量）
-   深色为默认，浅色通过 <html data-theme="light"> 切换。 */
+   浅色为默认，深色通过 <html data-theme="dark"> 切换。 */
 
 :root{
   /* 底色层 */
-  --bg:#0c120f;
-  --bg-soft:#101815;
-  --panel:#15201b;
-  --panel-2:#1b2822;
-  --panel-3:#23332b;
-  --line:rgba(255,255,255,.08);
-  --line-strong:rgba(255,255,255,.16);
+  --bg:#f5f8f5;
+  --bg-soft:#edf3ee;
+  --panel:#ffffff;
+  --panel-2:#f3f8f4;
+  --panel-3:#e6efe9;
+  --line:rgba(18,42,31,.10);
+  --line-strong:rgba(18,42,31,.20);
+  --mask:rgba(4,10,7,.56);
 
   /* 文字 */
-  --fg:#e8f1ec;
-  --fg-dim:#c5d5cd;
-  --muted:#98aca2;
-  --faint:#71867d;
+  --fg:#17231d;
+  --fg-dim:#36493f;
+  --muted:#5f7268;
+  --faint:#7d9086;
 
   /* 主色 / 强调 */
-  --acc:#55b97e;
-  --acc-ink:#dcf5e6;
-  --acc-2:#ffd54f;
-  --acc-grad:linear-gradient(135deg,#439a68,#5fc789);
-  --acc-surface:color-mix(in srgb,var(--acc) 12%,transparent);
+  --acc:#2f8f61;
+  --acc-ink:#ffffff;
+  --acc-2:#b8860b;
+  --acc-grad:linear-gradient(135deg,#2d875c,#3da472);
+  --acc-surface:color-mix(in srgb,var(--acc) 10%,transparent);
 
   /* 语义色 */
-  --ok:#7ed6a5;
-  --warn:#f0b45e;
-  --danger:#e06c75;
-  --danger-soft:rgba(224,108,117,.12);
-  --info:#6ba8e0;
-  --warn-soft:rgba(240,180,94,.13);
-  --ok-soft:rgba(126,214,165,.12);
-  --info-soft:rgba(107,168,224,.12);
+  --ok:#26895d;
+  --warn:#a96f16;
+  --danger:#bd424c;
+  --danger-soft:rgba(189,66,76,.10);
+  --info:#2f74ad;
+  --warn-soft:rgba(169,111,22,.12);
+  --ok-soft:rgba(38,137,93,.10);
+  --info-soft:rgba(47,116,173,.10);
 
   /* 阴影与圆角 */
-  --sh-1:0 1px 2px rgba(0,0,0,.24);
-  --sh-2:0 12px 32px -14px rgba(0,0,0,.58);
-  --sh-3:0 28px 64px -22px rgba(0,0,0,.72);
+  --sh-1:0 1px 2px rgba(18,42,31,.07);
+  --sh-2:0 10px 28px -16px rgba(18,42,31,.28);
+  --sh-3:0 24px 52px -24px rgba(18,42,31,.34);
   --r-xs:6px;
   --r-sm:10px;
   --r-md:13px;
@@ -65,43 +66,43 @@
   --topbar-h:62px;
   --page-max:1240px;
 
-  color-scheme:dark;
+  color-scheme:light;
 }
 
-html[data-theme="light"]{
-  --bg:#eef3ef;
-  --bg-soft:#e7efe9;
-  --panel:#ffffff;
-  --panel-2:#f5faf6;
-  --panel-3:#e8f1ec;
-  --line:rgba(16,32,24,.10);
-  --line-strong:rgba(16,32,24,.20);
+html[data-theme="dark"]{
+  --bg:#0c120f;
+  --bg-soft:#101815;
+  --panel:#15201b;
+  --panel-2:#1b2822;
+  --panel-3:#23332b;
+  --line:rgba(255,255,255,.08);
+  --line-strong:rgba(255,255,255,.16);
 
-  --fg:#16211c;
-  --fg-dim:#33463c;
-  --muted:#5d6f66;
-  --faint:#7d8f86;
+  --fg:#e8f1ec;
+  --fg-dim:#c5d5cd;
+  --muted:#98aca2;
+  --faint:#71867d;
 
-  --acc:#3f9665;
-  --acc-ink:#0f2d1e;
-  --acc-2:#b8860b;
-  --acc-grad:linear-gradient(135deg,#3f8d61,#50a874);
-  --acc-surface:color-mix(in srgb,var(--acc) 10%,transparent);
+  --acc:#55b97e;
+  --acc-ink:#dcf5e6;
+  --acc-2:#ffd54f;
+  --acc-grad:linear-gradient(135deg,#439a68,#5fc789);
+  --acc-surface:color-mix(in srgb,var(--acc) 12%,transparent);
 
-  --ok:#2f9d6b;
-  --warn:#a9761c;
-  --danger:#c0454f;
-  --danger-soft:rgba(192,69,79,.10);
-  --info:#2f74ad;
-  --warn-soft:rgba(169,118,28,.12);
-  --ok-soft:rgba(47,157,107,.10);
-  --info-soft:rgba(47,116,173,.10);
+  --ok:#7ed6a5;
+  --warn:#f0b45e;
+  --danger:#e06c75;
+  --danger-soft:rgba(224,108,117,.12);
+  --info:#6ba8e0;
+  --warn-soft:rgba(240,180,94,.13);
+  --ok-soft:rgba(126,214,165,.12);
+  --info-soft:rgba(107,168,224,.12);
 
-  --sh-1:0 1px 2px rgba(20,40,30,.08);
-  --sh-2:0 10px 28px -16px rgba(20,40,30,.30);
-  --sh-3:0 22px 52px -24px rgba(20,40,30,.38);
+  --sh-1:0 1px 2px rgba(0,0,0,.24);
+  --sh-2:0 12px 32px -14px rgba(0,0,0,.58);
+  --sh-3:0 28px 64px -22px rgba(0,0,0,.72);
 
-  color-scheme:light;
+  color-scheme:dark;
 }
 
 /* 状态色别名：组件里一律用语义名，不写死十六进制 */
@@ -115,5 +116,9 @@ html[data-theme="light"]{
   --st-info:var(--info);
   --st-info-bg:var(--info-soft);
   --st-idle:var(--faint);
+  --st-idle-bg:rgba(95,114,104,.10);
+}
+
+html[data-theme="dark"]{
   --st-idle-bg:rgba(147,168,158,.10);
 }

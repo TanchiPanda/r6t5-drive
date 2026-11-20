@@ -70,6 +70,9 @@
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     },
+    svgIcon(name) {
+      return '<svg class="fic-svg" aria-hidden="true"><use href="/assets/icons/sprite.svg#i-' + name + '"></use></svg>';
+    },
     /* 从路径取文件名 / 父目录（路径一律用 / 分隔） */
     basename(p) { return String(p || '').replace(/\/+$/, '').split('/').pop(); },
     dirname(p) { const a = String(p || '').replace(/\/+$/, '').split('/'); a.pop(); return a.join('/'); },
@@ -81,8 +84,8 @@
       if (!box) { box = document.createElement('div'); box.className = 'toasts'; document.body.appendChild(box); }
       const el = document.createElement('div');
       el.className = 'toast ' + (type || '');
-      const ico = type === 'danger' ? '⚠' : type === 'warn' ? '!' : type === 'ok' ? '✓' : 'i';
-      el.innerHTML = '<span class="ico">' + ico + '</span><span>' + R6T5.esc(msg) + '</span>';
+      const iconName = type === 'danger' || type === 'warn' ? 'alert' : type === 'ok' ? 'check' : 'info';
+      el.innerHTML = '<span class="ico">' + R6T5.svgIcon(iconName) + '</span><span>' + R6T5.esc(msg) + '</span>';
       box.appendChild(el);
       setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .25s'; setTimeout(() => el.remove(), 260); }, type === 'danger' ? 5200 : 2800);
     },
@@ -91,7 +94,7 @@
     /* ---------- 主题 ---------- */
     theme: {
       key: 'r6t5.theme',
-      get() { return localStorage.getItem(R6T5.theme.key) || 'dark'; },
+      get() { return localStorage.getItem(R6T5.theme.key) || 'light'; },
       set(v) {
         document.documentElement.setAttribute('data-theme', v === 'light' ? 'light' : 'dark');
         localStorage.setItem(R6T5.theme.key, v);
@@ -258,8 +261,8 @@
     /* 与 tokens.css 两套主题一一对应的色板（iframe srcdoc 隔离，读不到父页面变量，需内联注入） */
     sidePalette(theme) {
       return theme === 'light'
-        ? { scheme: 'light', panel: '#ffffff', fg: '#16211c', fgDim: '#33463c', muted: '#5d6f66', info: '#2f74ad', line: 'rgba(16,32,24,.10)' }
-        : { scheme: 'dark', panel: '#151f1b', fg: '#e6f0ea', fgDim: '#c3d3cb', muted: '#93a89e', info: '#6ba8e0', line: 'rgba(255,255,255,.09)' };
+        ? { scheme: 'light', panel: '#ffffff', fg: '#17231d', fgDim: '#36493f', muted: '#5f7268', info: '#2f74ad', line: 'rgba(18,42,31,.10)' }
+        : { scheme: 'dark', panel: '#15201b', fg: '#e8f1ec', fgDim: '#c5d5cd', muted: '#98aca2', info: '#6ba8e0', line: 'rgba(255,255,255,.08)' };
     },
     sideHtmlDoc(clean, theme) {
       const P = R6T5.brand.sidePalette(theme || R6T5.theme.get());

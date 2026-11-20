@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -158,7 +158,7 @@
   <div class="modal">
     <div class="modal-head"><h3>删除</h3></div>
     <div class="modal-body">
-      <div class="note warn"><span class="ico">!</span><div>将「<b id="delete-name"></b>」移入回收站？删除后可在回收站恢复，超过保留期将被彻底清除。</div></div>
+      <div class="note warn"><span class="ico"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-alert"></use></svg></span><div>将「<b id="delete-name"></b>」移入回收站？删除后可在回收站恢复，超过保留期将被彻底清除。</div></div>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" id="delete-cancel" type="button">取消</button>
@@ -191,7 +191,7 @@
   <div class="modal">
     <div class="modal-head"><h3>解压</h3></div>
     <div class="modal-body">
-      <div class="note warn mb3"><span class="ico">!</span><div>将解压 <b id="extract-src-name"></b> 中的文件；同名文件已存在时会跳过，不会覆盖。</div></div>
+      <div class="note warn mb3"><span class="ico"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-alert"></use></svg></span><div>将解压 <b id="extract-src-name"></b> 中的文件；同名文件已存在时会跳过，不会覆盖。</div></div>
       <div class="field">
         <label for="extract-target-dir">选择目标文件夹</label>
         <select class="select" id="extract-target-dir"></select>

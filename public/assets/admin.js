@@ -127,7 +127,7 @@
       if (!el) return;
       const msg = (e && e.message) || fallback || '操作失败，请稍后重试';
       el.classList.remove('hide');
-      el.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' + R6T5.esc(msg) + '</div></div>';
+      el.innerHTML = '<div class="note danger"><span class="ico">' + Admin.icon('alert') + '</span><div>' + R6T5.esc(msg) + '</div></div>';
     },
     clearAlert(el) { if (el) { el.classList.add('hide'); el.innerHTML = ''; } },
 
@@ -181,11 +181,11 @@
       try {
         const st = await Admin.get('/api/admin/setup/status');
         if (!st || st.next === 'ready') {
-          box.innerHTML = '<div class="note ok"><span class="ico">✓</span><div><b>初始化已完成</b>，站点可以使用邮箱登录。</div></div>';
+          box.innerHTML = '<div class="note ok"><span class="ico">' + Admin.icon('check') + '</span><div><b>初始化已完成</b>，站点可以使用邮箱登录。</div></div>';
           return;
         }
         const link = st.link ? '<a class="btn sm" href="' + R6T5.esc(st.link) + '">' + R6T5.esc(st.linkLabel || '前往') + '</a>' : '';
-        box.innerHTML = '<div class="note warn"><span class="ico">!</span><div class="flex1"><b>待完成初始化</b><p class="mt1 mb0">' +
+        box.innerHTML = '<div class="note warn"><span class="ico">' + Admin.icon('alert') + '</span><div class="flex1"><b>待完成初始化</b><p class="mt1 mb0">' +
           R6T5.esc(st.hint || '还有初始化项未完成') + '</p></div>' + link + '</div>';
       } catch (e) {
         Admin.alert(box, e, '初始化状态读取失败');
@@ -518,10 +518,10 @@
       const r = await Admin.post('/api/admin/supabase/test', {});
       if (r && r.ok) {
         const checks = r.checks ? Object.keys(r.checks).filter(k => r.checks[k]).map(k => R6T5.esc(k)).join('、') : '';
-        note.innerHTML = '<div class="note ok"><span class="ico">✓</span><div>连通正常' + (r.latencyMs != null ? ' · ' + r.latencyMs + 'ms' : '') +
+        note.innerHTML = '<div class="note ok"><span class="ico">' + Admin.icon('check') + '</span><div>连通正常' + (r.latencyMs != null ? ' · ' + r.latencyMs + 'ms' : '') +
           (checks ? ' · 检查项：' + checks : '') + '</div></div>';
       } else {
-        note.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' + R6T5.esc((r && r.error && r.error.message) || (r && r.message) || '自检未通过') + '</div></div>';
+        note.innerHTML = '<div class="note danger"><span class="ico">' + Admin.icon('alert') + '</span><div>' + R6T5.esc((r && r.error && r.error.message) || (r && r.message) || '自检未通过') + '</div></div>';
       }
     } catch (e) { Admin.alert(note, e, '自检请求失败'); }
   }
@@ -1008,7 +1008,7 @@
       const ok = !!(r && r.ok);
       testState = { status: ok ? 'ok' : 'fail', message: (r && r.message) || (ok ? '测试通过' : '测试未通过') };
       Admin.$('#st-test-note').innerHTML =
-        '<div class="note ' + (ok ? 'ok' : 'danger') + '"><span class="ico">' + (ok ? '✓' : '⚠') + '</span><div>' +
+        '<div class="note ' + (ok ? 'ok' : 'danger') + '"><span class="ico">' + Admin.icon(ok ? 'check' : 'alert') + '</span><div>' +
         R6T5.esc(testState.message) + '</div></div>';
       const warn = Admin.$('#st-test-warn');
       if (ok) { warn.textContent = '自检通过'; warn.className = 'help ok'; }
@@ -1016,7 +1016,7 @@
     } catch (e) {
       testState = { status: 'fail', message: (e && e.message) || '测试失败' };
       Admin.$('#st-test-note').innerHTML =
-        '<div class="note danger"><span class="ico">⚠</span><div>' + R6T5.esc(testState.message) + '</div></div>';
+        '<div class="note danger"><span class="ico">' + Admin.icon('alert') + '</span><div>' + R6T5.esc(testState.message) + '</div></div>';
       const warn = Admin.$('#st-test-warn');
       warn.textContent = '未通过自检，仍可保存，建议先修正配置';
       warn.className = 'help warn';
@@ -1163,7 +1163,7 @@
     const path = Admin.$('#rs-path').value.trim();
     const box = Admin.$('#rs-result');
     if (!path) {
-      box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>请输入要解析的目录路径。</div></div>';
+      box.innerHTML = '<div class="note warn"><span class="ico">' + Admin.icon('alert') + '</span><div>请输入要解析的目录路径。</div></div>';
       return;
     }
     let r;
@@ -1172,7 +1172,7 @@
     const s = r.strategy || {};
     const matchedBy = MATCH_LABEL[r.matchedBy] || r.matchedBy || '—';
     box.innerHTML =
-      '<div class="note info"><span class="ico">i</span><div class="flex1">' +
+      '<div class="note info"><span class="ico">' + Admin.icon('info') + '</span><div class="flex1">' +
       '<div class="row tight"><b>' + R6T5.esc(s.name || '—') + '</b>' +
       '<span class="badge ' + (TYPE_BADGE[s.type] || '') + '">' + R6T5.esc(typeText(s.type)) + '</span>' +
       (s.readOnly ? '<span class="badge warn">只读</span>' : '<span class="badge ok">可写</span>') + '</div>' +
@@ -1850,7 +1850,7 @@
     f.publicUrl.value = s.publicUrl || '';
     f.allowSignup.checked = !!s.allowSignup;
     f.trashRetentionDays.value = s.trashRetentionDays ?? 30;
-    f.themeDefault.value = s.themeDefault || 'dark';
+    f.themeDefault.value = s.themeDefault || 'light';
     if (f.previewOffice) f.previewOffice.value = (s.preview && s.preview.office) || 'none';
     if (f.previewPdf) f.previewPdf.value = (s.preview && s.preview.pdf) || 'pdfjs';
 
@@ -1923,18 +1923,18 @@
       if (!d) return;
       if (d.checked === false) {
         latest.classList.add('hide');
-        box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>暂时无法检查更新（无网络）' +
+        box.innerHTML = '<div class="note warn"><span class="ico">' + Admin.icon('alert') + '</span><div>暂时无法检查更新（无网络）' +
           R6T5.esc(updateStatusReasonText(d.reason)) + '</div></div>';
         return;
       }
       if (d.hasUpdate === false) {
         latest.classList.add('hide');
-        box.innerHTML = '<div class="note ok"><span class="ico">✓</span><div>已是最新版本</div></div>';
+        box.innerHTML = '<div class="note ok"><span class="ico">' + Admin.icon('check') + '</span><div>已是最新版本</div></div>';
         return;
       }
       if (d.hasUpdate === true && d.latest) {
         const L = d.latest;
-        box.innerHTML = '<div class="note info"><span class="ico">i</span><div>发现新版本 ' +
+        box.innerHTML = '<div class="note info"><span class="ico">' + Admin.icon('info') + '</span><div>发现新版本 ' +
           R6T5.esc(L.version || '') + '</div></div>';
         Admin.$('#update-latest-version').textContent = L.version || '—';
         Admin.$('#update-latest-published').textContent = L.publishedAt ? Admin.time(L.publishedAt) : '—';
@@ -1955,7 +1955,7 @@
         render(d);
       } catch (e) {
         // 无网 / 远端异常时按「暂时无法检查更新」处理，不弹红字错误
-        box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>暂时无法检查更新（无网络）</div></div>';
+        box.innerHTML = '<div class="note warn"><span class="ico">' + Admin.icon('alert') + '</span><div>暂时无法检查更新（无网络）</div></div>';
       }
     };
 
@@ -2269,7 +2269,7 @@
     if (type === 'group') body.groupId = Admin.$('#r-group').value;
     try {
       const res = await Admin.post('/api/admin/store/redeem-codes', body);
-      Admin.$('#redeem-gen-result').innerHTML = '<div class="note ok"><span class="ico">✓</span><div>已生成 ' +
+      Admin.$('#redeem-gen-result').innerHTML = '<div class="note ok"><span class="ico">' + Admin.icon('check') + '</span><div>已生成 ' +
         (res.codes || []).length + ' 个兑换码，批次 <code>' + Admin.esc(res.batchId || '') + '</code></div></div>';
       R6T5.toast('生成完成', 'ok');
       await loadCodes();

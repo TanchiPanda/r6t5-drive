@@ -81,7 +81,7 @@
 /* ---------- 弹窗：信息披露 ---------- */
 .disclosure{display:flex;flex-direction:column;gap:var(--s3);margin-bottom:var(--s4)}
 .disclosure .dc-block{border:1px solid var(--line);border-radius:var(--r-md);padding:var(--s3) var(--s4);background:var(--panel-2)}
-.disclosure .dc-title{font-size:var(--fs-xs);letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:var(--s2)}
+.disclosure .dc-title{font-size:var(--fs-xs);letter-spacing:.2px;color:var(--muted);margin-bottom:var(--s2)}
 .disclosure .dc-list{display:flex;flex-direction:column;gap:6px;font-size:var(--fs-sm)}
 .disclosure .dc-list .li{display:flex;gap:8px;align-items:baseline}
 .disclosure .dc-list .key{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--faint);flex:none}
@@ -174,7 +174,7 @@ td .row-actions .btn{white-space:nowrap}
 /* ---------- 用户详情抽屉 ---------- */
 .drawer-mask{
   position:fixed;inset:0;z-index:55;
-  background:color-mix(in srgb,var(--bg) 70%,transparent);backdrop-filter:blur(3px);
+  background:var(--mask);backdrop-filter:blur(3px);
   opacity:0;pointer-events:none;transition:opacity var(--t);
 }
 .drawer-mask.open{opacity:1;pointer-events:auto}
