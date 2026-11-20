@@ -1,9 +1,15 @@
 # R6T5 Drive
 
+<p>
+  <a href="https://github.com/TanchiPanda/r6t5-drive/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
+  <a href="https://github.com/TanchiPanda/r6t5-drive/commits/main"><img alt="commits" src="https://img.shields.io/github/commit-activity/t/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
+  <a href="https://github.com/TanchiPanda/r6t5-drive/commits/main"><img alt="last commit" src="https://img.shields.io/github/last-commit/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
+  <a href="https://github.com/TanchiPanda/r6t5-drive/actions/workflows/docker.yml"><img alt="docker" src="https://github.com/TanchiPanda/r6t5-drive/actions/workflows/docker.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
+  <img alt="version" src="https://img.shields.io/badge/version-20261115b-63C08B?style=flat-square">
+</p>
+
 Docker 自托管的轻量网盘：**一个容器跑一个站点，容器内提供多用户空间**。后端 Node.js + Express + SQLite，前端纯 HTML/CSS/JS（无构建步骤），文件元数据存本地 SQLite，物理存储可在本地数据卷、S3 兼容对象存储、只读 GitHub 仓库之间选择。
-
-
-![docker](https://github.com/TanchiPanda/r6t5-drive/actions/workflows/docker.yml/badge.svg)
 
 
 - 仓库：https://github.com/TanchiPanda/r6t5-drive
