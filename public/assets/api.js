@@ -261,8 +261,8 @@
     /* 与 tokens.css 两套主题一一对应的色板（iframe srcdoc 隔离，读不到父页面变量，需内联注入） */
     sidePalette(theme) {
       return theme === 'light'
-        ? { scheme: 'light', panel: '#ffffff', fg: '#17231d', fgDim: '#36493f', muted: '#5f7268', info: '#2f74ad', line: 'rgba(18,42,31,.10)' }
-        : { scheme: 'dark', panel: '#15201b', fg: '#e8f1ec', fgDim: '#c5d5cd', muted: '#98aca2', info: '#6ba8e0', line: 'rgba(255,255,255,.08)' };
+        ? { scheme: 'light', panel: '#ffffff', fg: '#1d2734', fgDim: '#3d4c5e', muted: '#5f7083', info: '#2466d6', line: 'rgba(19,35,54,.09)' }
+        : { scheme: 'dark', panel: '#1d232b', fg: '#e9eef3', fgDim: '#c4cfda', muted: '#97a6b5', info: '#5f9df2', line: 'rgba(255,255,255,.08)' };
     },
     sideHtmlDoc(clean, theme) {
       const P = R6T5.brand.sidePalette(theme || R6T5.theme.get());
