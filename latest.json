@@ -1,9 +1,9 @@
 {
-  "version": "20261115a",
-  "issueNumber": 1,
-  "commentId": 6891880562,
-  "commentUrl": "https://github.com/TanchiPanda/r6t5-drive/issues/1#issuecomment-6891880562",
-  "publishedAt": "2026-11-15T08:45:48.156Z",
+  "version": "20261115b",
+  "issueNumber": 2,
+  "commentId": 7038503677,
+  "commentUrl": "https://github.com/TanchiPanda/r6t5-drive/issues/2#issuecomment-7038503677",
+  "publishedAt": "2026-11-20T11:34:32.580Z",
   "upgradeCommand": "docker compose pull && docker compose up -d",
-  "notes": "feat(console-ui): 概览账号来源开关 + 用户抽屉（封禁/改密/删号）+ 边栏 SVG 图标"
+  "notes": "feat(P9-C-ui): 商店前端（用户商店三 tab、付费分享付费墙、管理端店铺五页）"
 }
