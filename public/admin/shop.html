@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>商店 · R6T5 Drive</title>
+<link rel="icon" type="image/svg+xml" href="/branding/favicon">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body data-page="shop">
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><img class="brand-mark" data-brand-logo src="/assets/icons/favicon.svg" width="18" height="18" alt=""><div><span data-brand-name>R6T5 Drive</span><small>管理控制台</small></div></div>
+    <nav class="nav">
+      <div class="nav-group">运行</div>
+      <a href="/admin/home.html"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg></span>概览</a>
+      <a href="/admin/users.html"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg></span>用户</a>
+      <a href="/admin/storage.html"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h6l2 3h10v11H3z"/></svg></span>文件系统</a>
+      <a href="/admin/groups.html"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2 2 2 0 0 1 2-2h13"/><path d="M8 7h7M8 11h7"/></svg></span>用户组</a>
+      <div class="nav-group">经营</div>
+      <a href="/admin/shop.html" class="active"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-1.5 12H5.5z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></span>商店</a>
+      <div class="nav-group">治理</div>
+      <a href="/admin/shares.html"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V3h9l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1" fill="white"/></svg></span>分享</a>
+      <a href="/admin/trash.html"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6M14 11v6"/></svg></span>回收站</a>
+      <a href="/admin/audit.html"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-7"/></svg></span>审计</a>
+      <div class="nav-group">系统</div>
+      <a href="/admin/settings.html"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9c.3.4.8.7 1.5.7H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>站点设置</a>
+    </nav>
+    <div data-brand-sidehtml></div>
+    <div class="side-foot"><div id="admin-identity" class="faint">未登录</div></div>
+  </aside>
+
+  <div>
+    <div class="topbar">
+      <div class="page-title small muted">商店</div>
+      <div class="spacer"></div>
+      <div id="admin-chip" class="admin-chip"></div>
+      <button class="btn icon ghost" id="theme-btn" type="button" title="切换明暗主题">☾</button>
+    </div>
+
+    <main class="main">
+      <div class="content">
+        <div class="page-head">
+          <div><h1>商店与积分</h1><p class="sub">商品、订单、兑换码、积分流水与计费设置</p></div>
+        </div>
+        <div id="page-alert"></div>
+
+        <div class="pillnav mb2" id="shop-tabs">
+          <button type="button" data-tab="products" class="active">商品</button>
+          <button type="button" data-tab="orders">订单</button>
+          <button type="button" data-tab="redeem">兑换码</button>
+          <button type="button" data-tab="points">积分流水</button>
+          <button type="button" data-tab="settings">计费设置</button>
+        </div>
+
+        <!-- ===== 商品 ===== -->
+        <section class="tab-panel" id="tab-products">
+          <div class="card mb2">
+            <div class="card-head"><h3>新增商品</h3><span class="hint">会员 / 容量包</span></div>
+            <form id="product-form" class="form-grid">
+              <div class="field">
+                <label for="p-type">类型</label>
+                <select class="input" id="p-type">
+                  <option value="group_upgrade">会员（升级用户组）</option>
+                  <option value="storage_pack">容量包</option>
+                </select>
+              </div>
+              <div class="field"><label for="p-name">名称</label><input class="input" id="p-name" maxlength="64" placeholder="例如 体验会员"></div>
+              <div class="field"><label for="p-tag">标签（可选）</label><input class="input" id="p-tag" maxlength="16" placeholder="限时"></div>
+              <div class="field"><label for="p-price">现金价（元）</label><input class="input" id="p-price" type="number" min="0" step="0.01" value="1"></div>
+              <div class="field"><label for="p-points">积分价（可选）</label><input class="input" id="p-points" type="number" min="0" placeholder="50"></div>
+              <div class="field"><label for="p-days">时长（天）</label><input class="input" id="p-days" type="number" min="0" value="30"></div>
+              <div class="field" id="p-group-field"><label for="p-group">目标用户组</label><select class="input" id="p-group"></select></div>
+              <div class="field" id="p-storage-field"><label for="p-storage">扩容容量（GB）</label><input class="input" id="p-storage" type="number" min="1" step="1" placeholder="100"></div>
+              <div class="field span2"><label for="p-desc">描述（每行一条）</label><textarea class="input" id="p-desc" rows="3" placeholder="永久有效&#10;立即生效"></textarea></div>
+              <div class="field span2"><label><span>允许积分购买</span><input type="checkbox" id="p-allow-points" style="width:auto;margin-left:8px"></label></div>
+              <div class="form-actions"><button class="btn primary" id="p-submit" type="submit">创建商品</button></div>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>商品列表</h3><span class="hint" id="p-count"></span></div>
+            <div class="table-wrap"><table class="table"><thead><tr>
+              <th>名称</th><th>类型</th><th class="num">现金价</th><th class="num">积分价</th><th>时长</th><th>状态</th><th></th>
+            </tr></thead><tbody id="p-rows"></tbody></table></div>
+          </div>
+        </section>
+
+        <!-- ===== 订单 ===== -->
+        <section class="tab-panel hide" id="tab-orders">
+          <div class="card mb2 toolbar">
+            <div class="row tight">
+              <select class="input" id="o-status" style="width:180px">
+                <option value="">全部状态</option>
+                <option value="pending">待支付</option>
+                <option value="paid">已支付</option>
+                <option value="refunded">已退款</option>
+                <option value="cancelled">已取消</option>
+              </select>
+              <select class="input" id="o-channel" style="width:160px">
+                <option value="">全部渠道</option>
+                <option value="points">积分</option>
+                <option value="cash">现金</option>
+              </select>
+              <input class="input" id="o-email" placeholder="按邮箱过滤" style="max-width:240px">
+              <button class="btn" id="o-search" type="button">查询</button>
+              <div class="flex1"></div>
+              <span class="hint" id="o-count"></span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="table-wrap"><table class="table"><thead><tr>
+              <th>订单号</th><th>用户</th><th>商品</th><th class="num">金额</th><th class="num">积分</th><th>渠道</th><th>状态</th><th>创建</th><th></th>
+            </tr></thead><tbody id="o-rows"></tbody></table></div>
+          </div>
+        </section>
+
+        <!-- ===== 兑换码 ===== -->
+        <section class="tab-panel hide" id="tab-redeem">
+          <div class="card mb2">
+            <div class="card-head"><h3>生成兑换码</h3><span class="hint">单批次最多 1 万个</span></div>
+            <form id="redeem-gen-form" class="form-grid">
+              <div class="field">
+                <label for="r-type">类型</label>
+                <select class="input" id="r-type">
+                  <option value="points">积分</option>
+                  <option value="storage">容量</option>
+                  <option value="group">会员</option>
+                </select>
+              </div>
+              <div class="field"><label for="r-count">数量</label><input class="input" id="r-count" type="number" min="1" max="10000" value="10"></div>
+              <div class="field"><label for="r-prefix">前缀（可选）</label><input class="input" id="r-prefix" maxlength="8" placeholder="VIP"></div>
+              <div class="field" id="r-points-field"><label for="r-points">积分数</label><input class="input" id="r-points" type="number" min="1" placeholder="100"></div>
+              <div class="field" id="r-storage-field"><label for="r-storage">容量（GB）</label><input class="input" id="r-storage" type="number" min="1" placeholder="10"></div>
+              <div class="field" id="r-group-field"><label for="r-group">目标用户组</label><select class="input" id="r-group"></select></div>
+              <div class="field"><label for="r-days">有效期 / 会员时长（天，0=永久）</label><input class="input" id="r-days" type="number" min="0" value="0"></div>
+              <div class="field"><label for="r-maxuses">每码可用次数</label><input class="input" id="r-maxuses" type="number" min="1" value="1"></div>
+              <div class="field"><label for="r-bound">绑定邮箱（可选）</label><input class="input" id="r-bound" placeholder="仅该账号可用"></div>
+              <div class="form-actions"><button class="btn primary" id="r-submit" type="submit">生成</button></div>
+            </form>
+            <div id="redeem-gen-result" class="mt2"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>兑换码列表</h3><div class="spacer"></div><a class="btn sm ghost" href="/api/admin/store/redeem-codes/export.csv">导出 CSV</a><span class="hint" id="r-list-count"></span></div>
+            <div class="table-wrap"><table class="table"><thead><tr>
+              <th>兑换码</th><th>类型</th><th>额度</th><th>次数</th><th>状态</th><th>创建</th><th></th>
+            </tr></thead><tbody id="r-rows"></tbody></table></div>
+          </div>
+        </section>
+
+        <!-- ===== 积分流水 ===== -->
+        <section class="tab-panel hide" id="tab-points">
+          <div class="card mb2">
+            <div class="card-head"><h3>手工调账</h3><span class="hint">正数加、负数扣</span></div>
+            <form id="points-form" class="form-grid">
+              <div class="field"><label for="pt-email">用户邮箱</label><input class="input" id="pt-email" type="email" placeholder="user@example.com"></div>
+              <div class="field"><label for="pt-delta">增减额度</label><input class="input" id="pt-delta" type="number" step="1" placeholder="100"></div>
+              <div class="field span2"><label for="pt-note">备注</label><input class="input" id="pt-note" placeholder="线下充值 / 补偿"></div>
+              <div class="form-actions"><button class="btn primary" id="pt-submit" type="submit">提交</button></div>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>积分流水</h3><div class="spacer"></div>
+              <input class="input" id="pt-filter-email" placeholder="按邮箱过滤" style="max-width:220px">
+              <button class="btn sm" id="pt-filter" type="button">查询</button>
+            </div>
+            <div class="table-wrap"><table class="table"><thead><tr>
+              <th>时间</th><th>用户</th><th class="num">变动</th><th class="num">结余</th><th>来源</th><th>备注</th>
+            </tr></thead><tbody id="pt-rows"></tbody></table></div>
+          </div>
+        </section>
+
+        <!-- ===== 计费设置 ===== -->
+        <section class="tab-panel hide" id="tab-settings">
+          <div class="card mb2">
+            <div class="card-head"><h3>计费参数</h3><span class="hint">保存后立即生效</span></div>
+            <form id="billing-form" class="form-grid">
+              <div class="field"><label for="b-ppm">多少积分 = 1 分钱</label><input class="input" id="b-ppm" type="number" min="0" step="1"></div>
+              <div class="field"><label for="b-commission">付费分享分成（%）</label><input class="input" id="b-commission" type="number" min="1" max="100"></div>
+              <div class="field"><label for="b-grace">超额宽限（天）</label><input class="input" id="b-grace" type="number" min="0"></div>
+              <div class="field"><label for="b-notify">到期提前提醒（天）</label><input class="input" id="b-notify" type="number" min="0"></div>
+              <div class="field"><label for="b-cron1">通知任务 Cron</label><input class="input" id="b-cron1" placeholder="0 9 * * *"></div>
+              <div class="field"><label for="b-cron2">封禁检查 Cron</label><input class="input" id="b-cron2" placeholder="@every 1h"></div>
+              <div class="field"><label><span>允许匿名购买付费分享</span><input type="checkbox" id="b-anon" style="width:auto;margin-left:8px"></label></div>
+              <div class="field"><label><span>用户端显示商店入口</span><input type="checkbox" id="b-nav" style="width:auto;margin-left:8px"></label></div>
+              <div class="form-actions"><button class="btn primary" id="b-submit" type="submit">保存设置</button></div>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>定时任务</h3><div class="spacer"></div><button class="btn sm ghost" id="cron-refresh" type="button">刷新</button></div>
+            <div class="table-wrap"><table class="table"><thead><tr><th>任务</th><th>表达式</th><th>上次运行</th><th>结果</th><th></th></tr></thead><tbody id="cron-rows"></tbody></table></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/admin.js"></script>
+</body>
+</html>

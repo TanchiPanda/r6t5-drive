@@ -2070,10 +2070,369 @@
     }));
   }
 
+  /* ---------- 商店（商品 / 订单 / 兑换码 / 积分 / 计费） ---------- */
+  const shopState = { tab: 'products', groups: [], products: [], orders: [], codes: [] };
+
+  function shopTabs() {
+    Admin.$$('#shop-tabs button').forEach(b => b.addEventListener('click', () => {
+      shopState.tab = b.dataset.tab;
+      Admin.$$('#shop-tabs button').forEach(x => x.classList.toggle('active', x === b));
+      Admin.$$('.tab-panel').forEach(p => p.classList.add('hide'));
+      Admin.$('#tab-' + shopState.tab).classList.remove('hide');
+    }));
+  }
+
+  function typeLabel(t) {
+    return ({ group_upgrade: '会员', storage_pack: '容量包', points: '积分', storage: '容量', group: '会员' })[t] || t;
+  }
+
+  function orderStatusLabel(s) {
+    return ({ pending: '待支付', paid: '已支付', refunded: '已退款', cancelled: '已取消' })[s] || s;
+  }
+
+  function statusBadge(s) {
+    const cls = s === 'paid' ? 'ok' : (s === 'pending' ? 'warn' : (s === 'refunded' ? 'danger' : ''));
+    return '<span class="badge ' + cls + '">' + orderStatusLabel(s) + '</span>';
+  }
+
+  async function loadGroups() {
+    const d = await Admin.get('/api/admin/groups');
+    shopState.groups = d.items || [];
+    const opts = shopState.groups.map(g => '<option value="' + Admin.esc(g.id) + '">' + Admin.esc(g.name) + '</option>').join('');
+    ['#p-group', '#r-group'].forEach(sel => {
+      const el = Admin.$(sel);
+      if (el) el.innerHTML = opts;
+    });
+  }
+
+  async function loadProducts() {
+    const tbody = Admin.$('#p-rows');
+    const d = await Admin.get('/api/admin/store/products');
+    shopState.products = d.items || [];
+    Admin.$('#p-count').textContent = '共 ' + shopState.products.length + ' 个';
+    if (!shopState.products.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="empty"><div class="ico">◈</div><h3>还没有商品</h3><p>用上面的表单创建第一个会员或容量包。</p></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = shopState.products.map(p => {
+      const amount = p.type === 'storage_pack' ? Admin.bytes(p.storageBytes) : (p.durationDays ? p.durationDays + ' 天' : '—');
+      return '<tr><td><b>' + Admin.esc(p.name) + '</b>' + (p.tag ? ' <span class="badge warn">' + Admin.esc(p.tag) + '</span>' : '') + '</td>' +
+        '<td>' + typeLabel(p.type) + '</td>' +
+        '<td class="num">¥' + (Number(p.priceMinor || 0) / 100).toFixed(2) + '</td>' +
+        '<td class="num">' + (p.pointsPrice == null ? '—' : p.pointsPrice) + '</td>' +
+        '<td>' + amount + '</td>' +
+        '<td>' + (p.enabled ? '<span class="badge ok">上架</span>' : '<span class="badge">下架</span>') + '</td>' +
+        '<td><div class="shop-actions">' +
+        '<button class="btn sm ghost" data-act="toggle-product" data-id="' + Admin.esc(p.id) + '">' + (p.enabled ? '下架' : '上架') + '</button>' +
+        '<button class="btn sm ghost danger" data-act="del-product" data-id="' + Admin.esc(p.id) + '">删除</button>' +
+        '</div></td></tr>';
+    }).join('');
+  }
+
+  async function createProduct(ev) {
+    ev.preventDefault();
+    const type = Admin.$('#p-type').value;
+    const body = {
+      type,
+      name: Admin.$('#p-name').value.trim(),
+      tag: Admin.$('#p-tag').value.trim() || null,
+      description: Admin.$('#p-desc').value.trim() || null,
+      priceMinor: Math.round(Number(Admin.$('#p-price').value || 0) * 100),
+      pointsPrice: Admin.$('#p-points').value ? Number(Admin.$('#p-points').value) : null,
+      allowPoints: Admin.$('#p-allow-points').checked,
+      durationDays: Number(Admin.$('#p-days').value || 0),
+      enabled: true
+    };
+    if (type === 'storage_pack') {
+      const gb = Number(Admin.$('#p-storage').value);
+      if (!gb) { R6T5.toast('容量包需要填写扩容容量', 'danger'); return; }
+      body.storageBytes = String(BigInt(Math.round(gb)) * 1024n * 1024n * 1024n);
+    } else {
+      body.groupId = Admin.$('#p-group').value || null;
+    }
+    try {
+      await Admin.post('/api/admin/store/products', body);
+      R6T5.toast('商品已创建', 'ok');
+      Admin.$('#product-form').reset();
+      await loadProducts();
+    } catch (e) { R6T5.toastError(e); }
+  }
+
+  async function toggleProduct(id, nextEnabled) {
+    try {
+      await Admin.patch('/api/admin/store/products/' + encodeURIComponent(id), { enabled: nextEnabled });
+      await loadProducts();
+    } catch (e) { R6T5.toastError(e); }
+  }
+
+  async function removeProduct(id) {
+    if (!confirm('下架并删除该商品？已创建的订单不受影响。')) return;
+    try {
+      await Admin.del('/api/admin/store/products/' + encodeURIComponent(id));
+      R6T5.toast('已删除', 'ok');
+      await loadProducts();
+    } catch (e) { R6T5.toastError(e); }
+  }
+
+  async function loadOrders() {
+    const tbody = Admin.$('#o-rows');
+    const q = {};
+    const st = Admin.$('#o-status').value; if (st) q.status = st;
+    const ch = Admin.$('#o-channel').value; if (ch) q.channel = ch;
+    const em = Admin.$('#o-email').value.trim(); if (em) q.email = em;
+    let d;
+    try { d = await Admin.get('/api/admin/store/orders', q); }
+    catch (e) { R6T5.toastError(e); return; }
+    const items = d.items || [];
+    shopState.orders = items;
+    Admin.$('#o-count').textContent = '共 ' + (d.total != null ? d.total : items.length) + ' 条';
+    if (!items.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="9"><div class="empty"><div class="ico">▢</div><h3>没有订单</h3></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(o => {
+      const acts = [];
+      if (o.status === 'pending') {
+        acts.push('<button class="btn sm ghost" data-act="order-paid" data-id="' + Admin.esc(o.orderNo) + '">标记已付</button>');
+        acts.push('<button class="btn sm ghost" data-act="order-cancel" data-id="' + Admin.esc(o.orderNo) + '">取消</button>');
+      }
+      if (o.status === 'paid') {
+        acts.push('<button class="btn sm ghost danger" data-act="order-refund" data-id="' + Admin.esc(o.orderNo) + '">退款</button>');
+      }
+      const product = shopState.products.find(p => p.id === o.productId);
+      return '<tr><td><code>' + Admin.esc(o.orderNo) + '</code></td>' +
+        '<td>' + Admin.esc(o.email || '匿名') + '</td>' +
+        '<td>' + Admin.esc(o.shareToken ? ('付费分享 ' + o.shareToken.slice(0, 8)) : (product ? product.name : (o.productId || '—'))) + '</td>' +
+        '<td class="num">¥' + (Number(o.amountMinor || 0) / 100).toFixed(2) + '</td>' +
+        '<td class="num">' + (o.pointsUsed || 0) + '</td>' +
+        '<td>' + (o.channel === 'points' ? '积分' : '现金') + '</td>' +
+        '<td>' + statusBadge(o.status) + '</td>' +
+        '<td>' + Admin.time(o.createdAt) + '</td>' +
+        '<td><div class="shop-actions">' + acts.join('') + '</div></td></tr>';
+    }).join('');
+  }
+
+  async function orderAction(orderNo, action) {
+    const map = { 'order-paid': 'mark-paid', 'order-refund': 'refund', 'order-cancel': 'cancel' };
+    const label = { 'order-paid': '标记为已支付', 'order-refund': '退款', 'order-cancel': '取消' }[action];
+    if (!confirm('确认' + label + '订单 ' + orderNo + '？')) return;
+    try {
+      await Admin.post('/api/admin/store/orders/' + encodeURIComponent(orderNo) + '/' + map[action]);
+      R6T5.toast(label + '成功', 'ok');
+      await loadOrders();
+    } catch (e) { R6T5.toastError(e); }
+  }
+
+  async function loadCodes() {
+    const tbody = Admin.$('#r-rows');
+    let d;
+    try { d = await Admin.get('/api/admin/store/redeem-codes'); }
+    catch (e) { R6T5.toastError(e); return; }
+    const items = d.items || [];
+    shopState.codes = items;
+    Admin.$('#r-list-count').textContent = '共 ' + items.length + ' 个';
+    if (!items.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="empty"><div class="ico">▢</div><h3>还没有兑换码</h3></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(c => {
+      let amount = '—';
+      if (c.type === 'points') amount = (c.points || 0) + ' 积分';
+      else if (c.type === 'storage') amount = Admin.bytes(c.storageBytes);
+      else amount = '会员 ' + (c.durationDays ? c.durationDays + ' 天' : '永久');
+      return '<tr><td><code>' + Admin.esc(c.code) + '</code></td>' +
+        '<td>' + typeLabel(c.type) + '</td><td>' + amount + '</td>' +
+        '<td>' + c.usedCount + '/' + c.maxUses + '</td>' +
+        '<td><span class="badge ' + (c.status === 'active' ? 'ok' : '') + '">' + Admin.esc(c.status) + '</span></td>' +
+        '<td>' + Admin.time(c.createdAt) + '</td>' +
+        '<td><div class="shop-actions">' +
+        (c.status === 'active' ? '<button class="btn sm ghost" data-act="code-disable" data-id="' + Admin.esc(c.code) + '">禁用</button>' : '') +
+        '<button class="btn sm ghost danger" data-act="code-delete" data-id="' + Admin.esc(c.code) + '">删除</button>' +
+        '</div></td></tr>';
+    }).join('');
+  }
+
+  async function generateCodes(ev) {
+    ev.preventDefault();
+    const type = Admin.$('#r-type').value;
+    const body = {
+      type,
+      count: Number(Admin.$('#r-count').value || 0),
+      prefix: Admin.$('#r-prefix').value.trim(),
+      maxUses: Number(Admin.$('#r-maxuses').value || 1),
+      durationDays: Number(Admin.$('#r-days').value || 0)
+    };
+    const bound = Admin.$('#r-bound').value.trim();
+    if (bound) body.boundEmail = bound;
+    if (type === 'points') body.points = Number(Admin.$('#r-points').value || 0);
+    if (type === 'storage') {
+      const gb = Number(Admin.$('#r-storage').value || 0);
+      body.storageBytes = String(BigInt(Math.round(gb)) * 1024n * 1024n * 1024n);
+    }
+    if (type === 'group') body.groupId = Admin.$('#r-group').value;
+    try {
+      const res = await Admin.post('/api/admin/store/redeem-codes', body);
+      Admin.$('#redeem-gen-result').innerHTML = '<div class="note ok"><span class="ico">✓</span><div>已生成 ' +
+        (res.codes || []).length + ' 个兑换码，批次 <code>' + Admin.esc(res.batchId || '') + '</code></div></div>';
+      R6T5.toast('生成完成', 'ok');
+      await loadCodes();
+    } catch (e) { R6T5.toastError(e); }
+  }
+
+  async function codeAction(code, action) {
+    const label = { 'code-disable': '禁用', 'code-delete': '删除' }[action];
+    if (!confirm('确认' + label + '兑换码 ' + code + '？')) return;
+    try {
+      if (action === 'code-disable') await Admin.patch('/api/admin/store/redeem-codes/' + encodeURIComponent(code), {});
+      else await Admin.del('/api/admin/store/redeem-codes/' + encodeURIComponent(code));
+      R6T5.toast(label + '成功', 'ok');
+      await loadCodes();
+    } catch (e) { R6T5.toastError(e); }
+  }
+
+  async function adjustPoints(ev) {
+    ev.preventDefault();
+    const body = {
+      email: Admin.$('#pt-email').value.trim(),
+      delta: Number(Admin.$('#pt-delta').value || 0),
+      note: Admin.$('#pt-note').value.trim() || null
+    };
+    try {
+      const res = await Admin.post('/api/admin/points/adjust', body);
+      R6T5.toast('调账完成，余额 ' + res.balance, 'ok');
+      Admin.$('#points-form').reset();
+      await loadLedger();
+    } catch (e) { R6T5.toastError(e); }
+  }
+
+  async function loadLedger() {
+    const tbody = Admin.$('#pt-rows');
+    const q = { limit: 100 };
+    const em = Admin.$('#pt-filter-email').value.trim();
+    if (em) q.email = em;
+    let d;
+    try { d = await Admin.get('/api/admin/points/ledger', q); }
+    catch (e) { R6T5.toastError(e); return; }
+    const items = d.items || [];
+    if (!items.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6"><div class="empty"><div class="ico">▢</div><h3>没有流水</h3></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(r => '<tr><td>' + Admin.time(r.createdAt) + '</td>' +
+      '<td>' + Admin.esc(r.email) + '</td>' +
+      '<td class="num">' + (r.delta > 0 ? '+' : '') + r.delta + '</td>' +
+      '<td class="num">' + r.balanceAfter + '</td>' +
+      '<td>' + Admin.esc(r.source) + '</td>' +
+      '<td>' + Admin.esc(r.note || '—') + '</td></tr>').join('');
+  }
+
+  async function loadBilling() {
+    let cfg;
+    try { cfg = await Admin.get('/api/admin/store/settings'); }
+    catch (e) { R6T5.toastError(e); return; }
+    Admin.$('#b-ppm').value = cfg.pointsPerMinorUnit;
+    Admin.$('#b-commission').value = cfg.commissionPercent;
+    Admin.$('#b-grace').value = cfg.overQuotaGraceDays;
+    Admin.$('#b-notify').value = cfg.notifyOnExpireDays;
+    Admin.$('#b-cron1').value = cfg.cronNotifyExpr;
+    Admin.$('#b-cron2').value = cfg.cronBanExpr;
+    Admin.$('#b-anon').checked = !!cfg.allowAnonymousPurchase;
+    Admin.$('#b-nav').checked = !!cfg.storeNavEnabled;
+  }
+
+  async function saveBilling(ev) {
+    ev.preventDefault();
+    const body = {
+      'billing.pointsPerMinorUnit': Number(Admin.$('#b-ppm').value || 0),
+      'billing.commissionPercent': Number(Admin.$('#b-commission').value || 10),
+      'billing.overQuotaGraceDays': Number(Admin.$('#b-grace').value || 0),
+      'billing.notifyOnExpireDays': Number(Admin.$('#b-notify').value || 0),
+      'billing.cronNotifyExpr': Admin.$('#b-cron1').value.trim(),
+      'billing.cronBanExpr': Admin.$('#b-cron2').value.trim(),
+      'billing.allowAnonymousPurchase': Admin.$('#b-anon').checked,
+      'billing.storeNavEnabled': Admin.$('#b-nav').checked
+    };
+    try {
+      await Admin.patch('/api/admin/store/settings', body);
+      R6T5.toast('设置已保存', 'ok');
+      await loadCron();
+    } catch (e) { R6T5.toastError(e); }
+  }
+
+  async function loadCron() {
+    const tbody = Admin.$('#cron-rows');
+    let d;
+    try { d = await Admin.get('/api/admin/store/cron'); }
+    catch (e) { R6T5.toastError(e); return; }
+    const names = { notify: '到期提醒', ban: '超额封禁' };
+    tbody.innerHTML = Object.keys(d).map(k => {
+      const v = d[k] || {};
+      return '<tr><td><b>' + (names[k] || k) + '</b></td>' +
+        '<td><code>' + Admin.esc(v.expr) + '</code></td>' +
+        '<td>' + (v.lastRunAt ? Admin.time(v.lastRunAt) : '—') + '</td>' +
+        '<td>' + (v.lastOk == null ? '—' : (v.lastOk ? '<span class="badge ok">成功</span>' : '<span class="badge danger">失败</span>')) +
+        (v.lastResult ? ' <span class="hint">' + Admin.esc(v.lastResult) + '</span>' : '') + '</td>' +
+        '<td><button class="btn sm ghost" data-act="cron-run" data-id="' + k + '">立即运行</button></td></tr>';
+    }).join('');
+  }
+
+  function bindShopActions() {
+    document.addEventListener('click', async ev => {
+      const b = ev.target.closest('[data-act]');
+      if (!b) return;
+      const act = b.dataset.act, id = b.dataset.id;
+      if (act === 'toggle-product') {
+        const p = shopState.products.find(x => x.id === id);
+        if (p) await toggleProduct(id, !p.enabled);
+      } else if (act === 'del-product') await removeProduct(id);
+      else if (act === 'order-paid' || act === 'order-refund' || act === 'order-cancel') await orderAction(id, act);
+      else if (act === 'code-disable' || act === 'code-delete') await codeAction(id, act);
+      else if (act === 'cron-run') {
+        try {
+          const r = await Admin.post('/api/admin/store/cron/' + encodeURIComponent(id) + '/run');
+          R6T5.toast('任务已执行' + (r && r.result ? '：' + r.result : ''), 'ok');
+          await loadCron();
+        } catch (e) { R6T5.toastError(e); }
+      }
+    });
+  }
+
+  async function initShop() {
+    Admin.bindLogout();
+    await Admin.requireAdmin();
+    shopTabs();
+    bindShopActions();
+
+    Admin.$('#p-type').addEventListener('change', () => {
+      const v = Admin.$('#p-type').value;
+      Admin.$('#p-group-field').classList.toggle('hide', v !== 'group_upgrade');
+      Admin.$('#p-storage-field').classList.toggle('hide', v !== 'storage_pack');
+    });
+    Admin.$('#r-type').addEventListener('change', () => {
+      const v = Admin.$('#r-type').value;
+      Admin.$('#r-points-field').classList.toggle('hide', v !== 'points');
+      Admin.$('#r-storage-field').classList.toggle('hide', v !== 'storage');
+      Admin.$('#r-group-field').classList.toggle('hide', v !== 'group');
+    });
+    Admin.$('#product-form').addEventListener('submit', createProduct);
+    Admin.$('#o-search').addEventListener('click', loadOrders);
+    Admin.$('#redeem-gen-form').addEventListener('submit', generateCodes);
+    Admin.$('#points-form').addEventListener('submit', adjustPoints);
+    Admin.$('#pt-filter').addEventListener('click', loadLedger);
+    Admin.$('#billing-form').addEventListener('submit', saveBilling);
+    Admin.$('#cron-refresh').addEventListener('click', loadCron);
+
+    await loadGroups();
+    await Promise.all([loadProducts(), loadOrders(), loadCodes(), loadLedger(), loadBilling(), loadCron()]);
+    Admin.$('#p-type').dispatchEvent(new Event('change'));
+    Admin.$('#r-type').dispatchEvent(new Event('change'));
+  }
+
   /* ---------- 路由 ---------- */
   const routers = {
     home: initHome, users: initUsers, storage: initStorage, groups: initGroups,
-    shares: initShares, trash: initTrash, audit: initAudit, settings: initSettings, login: initLogin
+    shares: initShares, trash: initTrash, audit: initAudit, settings: initSettings, login: initLogin,
+    shop: initShop
   };
 
   document.addEventListener('DOMContentLoaded', () => {

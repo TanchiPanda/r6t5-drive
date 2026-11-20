@@ -207,3 +207,18 @@
   .batch-ops{width:100%}
   .quota-grid{gap:var(--s4)}
 }
+
+/* ---------- 商店 ---------- */
+.store-card{display:flex;flex-direction:column;gap:2px}
+.store-price{display:flex;align-items:baseline;gap:8px;margin-top:10px}
+.store-price b{font-size:20px;color:var(--text)}
+.store-price .d{font-size:12.5px}
+.store-desc{margin:4px 0 0;padding-left:16px;color:var(--muted);font-size:13px;line-height:1.9}
+.store-desc li{list-style:disc}
+.store-card .row.tight{margin-top:auto;padding-top:12px}
+
+/* ---------- 付费分享 ---------- */
+.paywall{margin-top:var(--s4)}
+.paywall-price{display:flex;align-items:baseline;gap:10px}
+.paywall-price b{font-size:22px;color:var(--warn)}
+.hairline{height:1px;background:var(--line)}

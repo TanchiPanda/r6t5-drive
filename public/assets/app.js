@@ -2183,7 +2183,7 @@
 
   /* ================= 公开分享页（/share/:token 与 /s/:token） ================= */
 
-  var PublicShare = { token: '', meta: null };
+  var PublicShare = { token: '', meta: null, pay: null, recover: '' };
 
   function shareErrView(e) {
     var title, msg;
@@ -2208,19 +2208,27 @@
     return share.remaining == null ? '不限下载次数' : '剩余 ' + share.remaining + ' 次下载';
   }
 
+  function shareQuery(path) {
+    var q = {};
+    if (path) q.path = path;
+    if (PublicShare.recover) q.recover = PublicShare.recover;
+    return R6T5.qs(q);
+  }
+
   function shareDownloadUrl(path) {
-    var q = path ? R6T5.qs({ path: path }) : '';
+    var q = shareQuery(path);
     return '/api/share/' + encodeURIComponent(PublicShare.token) + '/download' + (q ? '?' + q : '');
   }
 
   function sharePreviewUrl(path) {
-    return '/api/share/' + encodeURIComponent(PublicShare.token) + '/preview' +
-      (path ? '?' + R6T5.qs({ path: path }) : '');
+    var q = shareQuery(path);
+    return '/api/share/' + encodeURIComponent(PublicShare.token) + '/preview' + (q ? '?' + q : '');
   }
 
   async function initShare() {
     var m = location.pathname.match(/^\/(?:share|s)\/([^/?#]+)/);
     PublicShare.token = m ? decodeURIComponent(m[1]) : '';
+    PublicShare.recover = new URLSearchParams(location.search).get('recover') || '';
     Preview.ensure();
     await loadPublicShare();
   }
@@ -2239,6 +2247,7 @@
       return;
     }
     PublicShare.meta = data.share;
+    PublicShare.pay = await loadSharePayInfo();
     if (data.locked) renderShareLocked(data.share);
     else renderShareReady(data.share);
   }
@@ -2280,9 +2289,106 @@
     });
   }
 
+  async function loadSharePayInfo() {
+    try {
+      return await R6T5.get('/api/shares/' + encodeURIComponent(PublicShare.token) + '/pay-info',
+        PublicShare.recover ? { recover: PublicShare.recover } : undefined);
+    } catch (e) { return null; }
+  }
+
+  function paywallHtml(share, pay) {
+    var price = pay.pricePoints + ' 积分';
+    return '<h1 class="share-title">' + R6T5.esc(share.name) + '</h1>' +
+      '<div class="share-badges"><span class="badge warn">付费分享</span><span class="badge">购买后访问</span></div>' +
+      '<div class="paywall">' +
+      '<div class="paywall-price"><span class="d">此分享链接需要支付</span><b>' + price + '</b></div>' +
+      '<div class="stack mt2">' +
+      '<button class="btn primary block" id="pay-points-btn" type="button">用积分支付</button>' +
+      '<div class="d" id="pay-login-hint">' + (pay.self ? '' : '积分支付需要先登录；未登录请用下面的现金通道。') + '</div>' +
+      '<div class="hairline mt2"></div>' +
+      '<label class="d" for="pay-email">现金支付（留邮箱可收恢复凭证，可留空）</label>' +
+      '<input class="input" id="pay-email" type="email" placeholder="you@example.com">' +
+      '<button class="btn block" id="pay-cash-btn" type="button">生成现金订单</button>' +
+      '</div>' +
+      '<div id="pay-result" class="mt2"></div>' +
+      '<details class="mt3"><summary class="d">已经买过？用订单号恢复</summary>' +
+      '<div class="stack mt2"><input class="input" id="pay-order-no" placeholder="订单号"><input class="input" id="pay-recover" placeholder="恢复凭证">' +
+      '<button class="btn sm" id="pay-recover-btn" type="button">恢复购买</button></div></details>' +
+      '</div>';
+  }
+
+  async function afterPurchase() {
+    PublicShare.pay = await loadSharePayInfo();
+    await loadPublicShare();
+  }
+
+  function bindPaywall(share) {
+    var btnPts = document.getElementById('pay-points-btn');
+    btnPts && btnPts.addEventListener('click', async function () {
+      var box = document.getElementById('pay-result');
+      btnPts.disabled = true;
+      box.innerHTML = '';
+      try {
+        var res = await R6T5.post('/api/shares/' + encodeURIComponent(PublicShare.token) + '/buy-points');
+        R6T5.toast('支付成功，已解锁分享', 'ok');
+        await afterPurchase();
+        if (res && res.recoverToken) { /* 已登录购买无需凭证 */ }
+      } catch (e) {
+        if (e && e.status === 401) {
+          box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>需要登录才能用积分支付，<a href="/login">去登录</a>。</div></div>';
+        } else {
+          box.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' + R6T5.esc((e && e.message) || '支付失败') + '</div></div>';
+        }
+        btnPts.disabled = false;
+      }
+    });
+
+    var btnCash = document.getElementById('pay-cash-btn');
+    btnCash && btnCash.addEventListener('click', async function () {
+      var box = document.getElementById('pay-result');
+      var email = (document.getElementById('pay-email').value || '').trim();
+      btnCash.disabled = true;
+      box.innerHTML = '';
+      try {
+        var order = await R6T5.post('/api/shares/' + encodeURIComponent(PublicShare.token) + '/orders', { email: email || null });
+        box.innerHTML = '<div class="note ok"><span class="ico">✓</span><div>订单已创建：<code>' + R6T5.esc(order.orderNo) +
+          '</code><br>付款后请把订单号与恢复凭证交给管理员；凭证：<code>' + R6T5.esc(order.recoverToken || '') +
+          '</code></div></div><p class="d mt2">管理员标记已支付后，用上面的「恢复购买」即可解锁。</p>';
+        R6T5.toast('订单已创建', 'ok');
+      } catch (e) {
+        box.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' + R6T5.esc((e && e.message) || '下单失败') + '</div></div>';
+        btnCash.disabled = false;
+      }
+    });
+
+    var btnRecover = document.getElementById('pay-recover-btn');
+    btnRecover && btnRecover.addEventListener('click', async function () {
+      var box = document.getElementById('pay-result');
+      var orderNo = (document.getElementById('pay-order-no').value || '').trim();
+      var recover = (document.getElementById('pay-recover').value || '').trim();
+      if (!orderNo || !recover) { box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>订单号和恢复凭证都要填。</div></div>'; return; }
+      try {
+        var o = await R6T5.get('/api/orders/' + encodeURIComponent(orderNo), { recover: recover });
+        if (o.status !== 'paid') {
+          box.innerHTML = '<div class="note warn"><span class="ico">!</span><div>订单当前状态：' + R6T5.esc(o.status) + '，尚未支付。</div></div>';
+          return;
+        }
+        location.href = '/share/' + encodeURIComponent(PublicShare.token) + '?recover=' + encodeURIComponent(recover);
+      } catch (e) {
+        box.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>订单号或恢复凭证不正确。</div></div>';
+      }
+    });
+  }
+
   function renderShareReady(share) {
     var body = document.getElementById('share-body');
     var wrap = document.getElementById('share-wrap');
+    if (PublicShare.pay && PublicShare.pay.requiresPayment && !PublicShare.pay.alreadyPurchased && !PublicShare.pay.self) {
+      wrap.classList.remove('wide');
+      body.innerHTML = paywallHtml(share, PublicShare.pay);
+      bindPaywall(share);
+      return;
+    }
     wrap.classList.toggle('wide', share.isDir);
 
     var badgeType = share.isDir
@@ -2327,7 +2433,7 @@
     listBox.innerHTML = '<div class="skel" style="height:14px"></div>';
     var res;
     try {
-      res = await R6T5.get('/api/share/' + encodeURIComponent(PublicShare.token) + '/list', { path: path || '' });
+      res = await R6T5.get('/api/share/' + encodeURIComponent(PublicShare.token) + '/list', { path: path || '', recover: PublicShare.recover || undefined });
     } catch (e) {
       listBox.innerHTML = '<div class="note danger"><span class="ico">⚠</span><div>' +
         R6T5.esc((e && e.message) || '目录读取失败') + '</div></div>';

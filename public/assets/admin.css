@@ -240,3 +240,7 @@ td .row-actions .btn{white-space:nowrap}
   border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;overflow-y:auto;
 }
 #m-brand-preview .modal-body .brand-sidehtml-frame{height:200px;max-height:260px}
+
+/* ---------- 商店页 ---------- */
+.form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:var(--s2);margin-bottom:var(--s4)}
+.shop-actions{display:flex;gap:6px;flex-wrap:wrap}

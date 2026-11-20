@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>商店 · R6T5 Drive</title>
+<link rel="icon" type="image/svg+xml" href="/branding/favicon">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body data-page="store">
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><img class="brand-mark" data-brand-logo src="/assets/favicon.svg" width="18" height="18" alt=""><div><span data-brand-name>R6T5 Drive</span><small>个人空间</small></div></div>
+    <nav class="nav">
+      <a href="/files"><span class="ic">▤</span>文件</a>
+      <a href="/account"><span class="ic">◫</span>我的容量</a>
+      <a href="/store" class="active"><span class="ic">◈</span>商店</a>
+    </nav>
+    <div data-brand-sidehtml></div>
+    <div class="side-foot">
+      <div id="store-email" class="faint">未登录</div>
+      <a href="#" id="logout-link" class="faint">退出登录</a>
+    </div>
+  </aside>
+
+  <div class="main-col">
+    <div class="topbar">
+      <div class="page-title small muted">商店</div>
+      <div class="spacer"></div>
+      <span class="badge acc" id="points-chip">积分 —</span>
+      <button class="btn icon ghost" id="theme-btn" type="button">☾</button>
+      <button class="btn sm ghost" id="logout-btn" type="button">退出</button>
+    </div>
+
+    <main class="main">
+      <div class="content">
+        <div class="page-head">
+          <div>
+            <h1>商店</h1>
+            <p class="sub" id="store-sub">用积分或现金购买容量与会员；兑换码在这里核销。</p>
+          </div>
+        </div>
+
+        <div class="acct-stats" id="store-status">
+          <div class="stat">
+            <div class="k">当前用户组</div>
+            <div class="v" id="store-group">—</div>
+            <div class="d mt2" id="store-expire"></div>
+          </div>
+          <div class="stat">
+            <div class="k">可用积分</div>
+            <div class="v" id="store-points">—</div>
+            <div class="d mt2">用于兑换会员与容量</div>
+          </div>
+          <div class="stat">
+            <div class="k">空间上限</div>
+            <div class="v" id="store-space">—</div>
+            <div class="d mt2">购买容量包后立即生效</div>
+          </div>
+        </div>
+
+        <div class="pillnav mt2" id="store-tabs">
+          <button type="button" data-tab="membership" class="active">会员</button>
+          <button type="button" data-tab="storage">容量</button>
+          <button type="button" data-tab="redeem">兑换码</button>
+        </div>
+
+        <div id="tab-membership" class="tab-panel">
+          <div id="list-membership" class="grid g2 mt2"></div>
+        </div>
+
+        <div id="tab-storage" class="tab-panel hide">
+          <div id="list-storage" class="grid g2 mt2"></div>
+        </div>
+
+        <div id="tab-redeem" class="tab-panel hide">
+          <div class="card mt2">
+            <div class="card-head"><h3>兑换码</h3><span class="hint">容量 / 积分 / 会员</span></div>
+            <form id="redeem-form" class="stack">
+              <div class="field">
+                <label for="redeem-code">兑换码</label>
+                <input class="input" id="redeem-code" type="text" maxlength="32" autocomplete="off" placeholder="例如 ABCD1234EFGH">
+                <div class="d mt2" id="redeem-hint">输入后可先预览内容，确认无误再兑换。</div>
+              </div>
+              <div class="row tight">
+                <button class="btn" id="redeem-preview-btn" type="button">预览</button>
+                <button class="btn primary" id="redeem-submit-btn" type="submit">立即兑换</button>
+              </div>
+              <div id="redeem-result"></div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="modal-mask" id="m-order">
+  <div class="modal">
+    <div class="modal-head"><h3 id="order-title">订单已创建</h3><div class="spacer"></div><button class="btn icon ghost" id="order-close" type="button">✕</button></div>
+    <div class="modal-body" id="order-body"></div>
+    <div class="modal-foot">
+      <button class="btn primary" id="order-copy" type="button">复制订单号</button>
+      <button class="btn ghost" id="order-ok" type="button">知道了</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/store.js"></script>
+</body>
+</html>

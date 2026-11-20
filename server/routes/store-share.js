@@ -30,7 +30,7 @@ router.get('/:token/pay-info', (req, res, next) => {
       pricePoints: Number(row.pricePoints || 0),
       requiresPayment: shareRequiresPayment(row),
       self: !!email && email === String(row.email).toLowerCase(),
-      alreadyPurchased: hasPurchased(row, { email }),
+      alreadyPurchased: hasPurchased(row, { email, recoverToken: String(req.query.recover || '') || null }),
     });
   } catch (e) { next(e); }
 });

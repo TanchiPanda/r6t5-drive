@@ -147,6 +147,9 @@ app.get('/files', userPageGuard, (req, res, next) => {
 app.get('/account', userPageGuard, (req, res, next) => {
   res.sendFile(path.join(ENV.PUBLIC_DIR, 'account.html'), err => (err ? next() : undefined));
 });
+app.get('/store', userPageGuard, (req, res, next) => {
+  res.sendFile(path.join(ENV.PUBLIC_DIR, 'store.html'), err => (err ? next() : undefined));
+});
 
 // 分享页：/share/:token 一律落到同一张骨架页，token 由前端从路径解析
 app.get(['/share', '/share/:token', '/s', '/s/:token'], (req, res, next) => {
