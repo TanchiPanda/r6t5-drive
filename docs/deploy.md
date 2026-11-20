@@ -5,7 +5,7 @@
 ## 1. 前置准备
 
 - Docker Engine 与 Docker Compose 插件
-- 一个可访问的 Supabase 项目（用于账号体系；地址与密钥在后台填写，不写进 `.env`）
+- 无需外部账号服务：账号体系使用数据卷本地账号（scrypt），首个管理员密码由 `ADMIN_PASSWORD` 或启动日志给出
 - 端口规划：默认应用 `5212`；可选侧车端口见 `docker-compose.yml` 注释块
 
 ```bash
@@ -102,7 +102,7 @@ drive.example.com {
 
 - 生产环境务必经反向代理启用 HTTPS（Let's Encrypt 证书或内部 CA）。
 - 会话 Cookie 为 `SameSite=Lax`；站点经 HTTPS 对外提供时，登录态在跨站跳转下表现正常。
-- Supabase 配置中的 `url` 需为可从服务端访问的地址；若使用自定义域名，保证后端网络可达。
+- 存储策略的根目录需对容器可读写（本地卷默认 `./data/volume`）；对外地址需可从浏览器访问，否则 Google Docs / Microsoft 365 在线打开会被拒绝。
 
 ## 4. 数据备份
 
@@ -156,7 +156,7 @@ docker compose logs -f drive
 1. 旧机器：按「方式 A」停容器并打包 `data/`。
 2. 新机器装好 Docker，拉取同版本代码。
 3. 解包 `data/` 到新机器工程目录；复制并核对 `.env`（`SESSION_SECRET` 沿用旧值，否则旧会话全部失效）。
-4. `docker compose up -d`，登录后台核对 Supabase 配置、用户组与存储策略。
+4. `docker compose up -d`，登录后台核对用户组与存储策略（账号为数据卷本地账号）。
 5. 旧机器确认无流量后再下线。
 
 ## 7. 多站点部署
@@ -182,12 +182,10 @@ docker compose logs -f drive
 | 现象 | 可能原因 | 处理 |
 |---|---|---|
 | 首次登录找不到管理密码 | `ADMIN_PASSWORD` 留空，密码仅启动时打印一次 | 看 `docker compose logs drive` 启动日志；找不到则在 `.env` 显式设置 `ADMIN_PASSWORD` 后重启 |
-| 登录返回 401 `invalid_credentials` | 邮箱 / 密码与 Supabase 不一致；或 Supabase 未配置 | 先访问 `/api/setup/status` 确认 `supabase` 已通过自检；核对账号密码 |
+| 登录返回 401 `invalid_credentials` | 邮箱或密码错误 | 核对账号密码；管理员可在「用户」页重置密码 |
 | 登录返回 401 `invalid_admin_password` | 管理密码错误 | 查日志中的生成密码，或重置 `.env` 中 `ADMIN_PASSWORD` 后重启 |
 | 上传返回 413 `quota_file` | 超过用户组单文件上限 | 在管理端调高该组 `maxFileSizeBytes`；注意区分应用 413 与代理层 413 |
 | 上传被代理返回 413 / 中断 | Nginx / Caddy 默认限制请求体 | 配置 `client_max_body_size 0`、`proxy_request_buffering off`（见第 2 节） |
-| 登录返回 412 `supabase_not_configured` | 后台尚未填 Supabase 配置 | 管理员进入后台完成 Supabase 配置并通过自检 |
-| 保存 Supabase 返回 400 `supabase_unreachable` | URL / anon key / service key 任一项校验失败，或服务端网络不通 | 按自检 `details.reason` 逐项核对；确认容器能访问 Supabase 域名；失败不写库，可放心重试 |
 | 磁盘满 / 上传报 `storage_error` | 宿主数据盘写满，或目录权限不足 | 清理回收站与无关文件；检查 `data/` 所属用户与写权限；容器以非 root 用户运行 |
 | 页面 403 且提示无权限 | 普通用户访问了 `/admin/**` | 属预期守卫；管理后台需管理员会话 |
 | 健康检查不通过 | 进程未起来 / 端口未监听 | `docker compose logs drive` 看启动报错；核对 `PORT` 与端口映射 |

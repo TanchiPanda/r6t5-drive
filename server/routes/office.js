@@ -18,6 +18,7 @@ import {
 } from '../services/onlyoffice.js';
 import { resolveStorage } from '../services/bindings.js';
 import { getNodeByPath } from '../services/nodes.js';
+import { readPathOf } from '../services/blobs.js';
 import { getDriver } from '../services/storage/driver.js';
 
 const officeRouter = Router();
@@ -124,7 +125,7 @@ officePublicRouter.get('/office-file', async (req, res, next) => {
     const mime = (node && node.mime) || 'application/octet-stream';
     const name = safeLogical.split('/').pop();
 
-    const stream = await getDriver(strategy.type).readStream(strategy, safeLogical, { size, mime, name });
+    const stream = await getDriver(strategy.type).readStream(strategy, readPathOf(node, safeLogical), { size, mime, name });
     res.setHeader('Content-Type', mime);
     res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(name)}`);
     if (size != null) res.setHeader('Content-Length', size);

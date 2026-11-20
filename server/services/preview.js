@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { readPathOf } from './blobs.js';
 import { getDriver } from './storage/driver.js';
 import { extOfPath, OFFICE_EXT, OFFICE_MIME } from './preview-config.js';
 import { ZipReader } from '../lib/zip.js';
@@ -144,7 +145,7 @@ async function probeSize(strategy, logicalPath, node) {
   if (strategy.type === 'volume') {
     try {
       // 复用驱动的物理路径解析不对外暴露；这里通过驱动 readStream 前先 stat 同名物理路径
-      const phys = volumePhysicalPath(strategy, logicalPath);
+      const phys = volumePhysicalPath(strategy, readPathOf(node, logicalPath));
       return fs.statSync(phys).size;
     } catch { return null; }
   }
@@ -171,7 +172,7 @@ function safeParse(s) { try { return s ? JSON.parse(s) : {}; } catch { return {}
  */
 async function readWhole(strategy, logicalPath, { softLimit, node } = {}) {
   const driver = driverOf(strategy);
-  const stream = await driver.readStream(strategy, logicalPath, { size: node?.sizeBytes, mime: node?.mime });
+  const stream = await driver.readStream(strategy, readPathOf(node, logicalPath), { size: node?.sizeBytes, mime: node?.mime });
   const chunks = [];
   let total = 0;
   for await (const chunk of stream) {
@@ -197,7 +198,7 @@ export async function listZipEntries({ strategy, logicalPath, node }) {
   let filePath = null;
   let cleanup = null;
   if (strategy.type === 'volume') {
-    filePath = volumePhysicalPath(strategy, logicalPath);
+    filePath = volumePhysicalPath(strategy, readPathOf(node, logicalPath));
   } else {
     const tmp = await materializeRemote(strategy, logicalPath, node);
     filePath = tmp.tmpFile;
@@ -305,7 +306,7 @@ function readOrientationInExif(buf, ifdStart, _segLen) {
  */
 async function materializeRemote(strategy, logicalPath, node) {
   const driver = driverOf(strategy);
-  const stream = await driver.readStream(strategy, logicalPath, { size: node?.sizeBytes, mime: node?.mime });
+  const stream = await driver.readStream(strategy, readPathOf(node, logicalPath), { size: node?.sizeBytes, mime: node?.mime });
   const tmpFile = path.join(os.tmpdir(), `r6t5-preview-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`);
   let total = 0;
   const out = fs.createWriteStream(tmpFile);
@@ -355,7 +356,7 @@ async function sendBinary({ res, strategy, logicalPath, node, classification, re
 
   // ---- volume：本地 fs 流，天然支持 start/end ----
   if (strategy.type === 'volume') {
-    const phys = volumePhysicalPath(strategy, logicalPath);
+    const phys = volumePhysicalPath(strategy, readPathOf(node, logicalPath));
     let stat;
     try { stat = fs.statSync(phys); } catch { throw notFound('文件不存在'); }
     const size = stat.size;
@@ -396,7 +397,7 @@ async function sendBinary({ res, strategy, logicalPath, node, classification, re
       let size = total;
       if (size == null) {
         // 用 HEAD 风格：直接 GET 不带 Range，从响应头拿长度后再按范围读
-        const probe = await driver.readStream(strategy, logicalPath, { size: node?.sizeBytes, mime: node?.mime });
+        const probe = await driver.readStream(strategy, readPathOf(node, logicalPath), { size: node?.sizeBytes, mime: node?.mime });
         size = Number(probe.meta?.headers?.['content-length'] || 0) || null;
         try { probe.destroy(); } catch {}
       }
@@ -410,7 +411,7 @@ async function sendBinary({ res, strategy, logicalPath, node, classification, re
       }
       const { start, end } = parsed;
       const range = `bytes=${start}-${end}`;
-      const stream = await driver.readStream(strategy, logicalPath, { size, mime, range });
+      const stream = await driver.readStream(strategy, readPathOf(node, logicalPath), { size, mime, range });
       res.status(206);
       res.setHeader('Content-Type', mime);
       res.setHeader('Accept-Ranges', 'bytes');
@@ -420,7 +421,7 @@ async function sendBinary({ res, strategy, logicalPath, node, classification, re
       stream.pipe(res);
       return;
     }
-    const stream = await driver.readStream(strategy, logicalPath, { size: total, mime });
+    const stream = await driver.readStream(strategy, readPathOf(node, logicalPath), { size: total, mime });
     res.status(200);
     res.setHeader('Content-Type', mime);
     res.setHeader('Accept-Ranges', 'bytes');

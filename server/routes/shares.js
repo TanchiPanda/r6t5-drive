@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { readUserSession } from '../lib/session.js';
 import { ApiError, badRequest, forbidden, storageError, shareCodeRequired, unauthorized, shareNotPaid } from '../lib/errors.js';
+import { readPathOf } from '../services/blobs.js';
 import { getDriver } from '../services/storage/driver.js';
 import { getStrategy as getStrategyById } from '../services/storage/registry.js';
 import { sendPreview } from '../services/preview.js';
@@ -119,7 +120,7 @@ publicRouter.get('/:token/download', async (req, res, next) => {
     const size = node ? Number(node.sizeBytes) : undefined;
     const mime = (node && node.mime) || 'application/octet-stream';
 
-    const stream = await getDriver(strategy.type).readStream(strategy, logical, { size, mime, name });
+    const stream = await getDriver(strategy.type).readStream(strategy, readPathOf(node, logical), { size, mime, name });
 
     res.setHeader('Content-Type', mime);
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);

@@ -193,7 +193,7 @@ export async function streamZipDownload({ user, paths, req, res }) {
       if (aborted) break;
       const strategy = strategyForNode(user, f);
       const driver = getDriver(strategy.type);
-      const stream = await driver.readStream(strategy, f.path, { size: f.sizeBytes, mime: f.mime, name: f.name });
+      const stream = await driver.readStream(strategy, readPathOf(f, f.path), { size: f.sizeBytes, mime: f.mime, name: f.name });
       await writer.addFile(relToParent(f.path, parent), stream);
     }
     if (!aborted) {
@@ -261,13 +261,14 @@ export async function compress({ user, paths, targetPath, name }) {
   const tmpZip = path.join(TMP_DIR, `compress-${Date.now()}-${randomHex()}.zip`);
   let zipBytes = 0;
   let out = null;
+  let zipBlob = null;
   try {
     out = fs.createWriteStream(tmpZip);
     const writer = new ZipWriter(out);
     for (const f of plan.files) {
       const strategy = strategyForNode(user, f);
       const driver = getDriver(strategy.type);
-      const stream = await driver.readStream(strategy, f.path, { size: f.sizeBytes, mime: f.mime, name: f.name });
+      const stream = await driver.readStream(strategy, readPathOf(f, f.path), { size: f.sizeBytes, mime: f.mime, name: f.name });
       await writer.addFile(relToParent(f.path, parent), stream);
     }
     await writer.finish();
@@ -288,8 +289,8 @@ export async function compress({ user, paths, targetPath, name }) {
       throw quotaTraffic({ limitBytes: quota.traffic7dLimitBytes, usedBytes: quota.traffic7dUsedBytes });
     }
 
-    await getDriver(hit.strategy.type).writeFromTemp(hit.strategy, target, tmpZip, {
-      size: zipBytes, mime: 'application/zip', name: zipName,
+    zipBlob = await writeBlobFromTemp({
+      strategy: hit.strategy, filename: zipName, tmpFile: tmpZip, sizeBytes: zipBytes, mime: 'application/zip', createdBy: email,
     });
   } finally {
     if (out && !out.destroyed) out.destroy();
@@ -298,7 +299,7 @@ export async function compress({ user, paths, targetPath, name }) {
 
   const node = insertNode({
     email, parentId: dirNode.id, name: zipName, path: target,
-    isDir: false, sizeBytes: zipBytes, mime: 'application/zip', storageId: hit.strategy.id,
+    isDir: false, sizeBytes: zipBytes, mime: 'application/zip', storageId: hit.strategy.id, blobId: zipBlob.id,
   });
   recordTraffic(email, 'upload', zipBytes);
   writeAudit({ email, action: 'compress', target, bytes: zipBytes });
@@ -389,12 +390,14 @@ export async function extract({ user, path: srcPath, targetPath }) {
     // 第二遍：落目标策略 + 建节点
     for (const { entry, stageFile, destPath } of staged) {
       const parentNode = ensureDirNodes(email, parentOf(destPath), dirNode);
-      await getDriver(hit.strategy.type).writeFromTemp(hit.strategy, destPath, stageFile, {
-        size: entry.uncompSize, mime: guessMime(entry.name), name: basenameOf(entry.name),
+      const entryName = basenameOf(entry.name);
+      const entryMime = guessMime(entry.name);
+      const blob = await writeBlobFromTemp({
+        strategy: hit.strategy, filename: entryName, tmpFile: stageFile, sizeBytes: entry.uncompSize, mime: entryMime, createdBy: email,
       });
       insertNode({
-        email, parentId: parentNode.id, name: basenameOf(entry.name), path: destPath,
-        isDir: false, sizeBytes: entry.uncompSize, mime: guessMime(entry.name), storageId: hit.strategy.id,
+        email, parentId: parentNode.id, name: entryName, path: destPath,
+        isDir: false, sizeBytes: entry.uncompSize, mime: entryMime, storageId: hit.strategy.id, blobId: blob.id,
       });
     }
     for (const e of dirEntries) {

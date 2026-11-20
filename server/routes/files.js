@@ -16,6 +16,7 @@ import {
   softDeleteRecursive, searchNodes,
 } from '../services/nodes.js';
 import { quotaForUser, quotaBig } from '../services/quota.js';
+import { reserveBlob, dropReservedBlob, finalizeBlob, releaseBlob, readPathOf } from '../services/blobs.js';
 import { recordTraffic } from '../services/traffic.js';
 import { writeAudit } from '../services/audit.js';
 import * as registry from '../services/storage/registry.js';
@@ -246,24 +247,29 @@ router.post('/upload', requireConfirmed, (req, res, next) => {
         if (existing && !overwrite) { cleanup(); throw conflict('同名文件已存在', { path: targetPath }); }
         if (existing?.isDir) { cleanup(); throw conflict('同名目录已存在', { path: targetPath }); }
 
+        // 扁平 Blob：先占索引号拿到 uploads/<id>/<文件名>，写成功后再把节点挂到该 blob。
+        const reserved = reserveBlob({ storageId: hit.strategy.id, filename: fileName });
         try {
-          await getDriver(hit.strategy.type).writeFromTemp(hit.strategy, targetPath, tmpFile, {
+          await getDriver(hit.strategy.type).writeFromTemp(hit.strategy, reserved.key, tmpFile, {
             size: Number(size), mime: req.file.mimetype, name: fileName,
           });
-        } catch (e) { cleanup(); throw e; }
+        } catch (e) { dropReservedBlob(reserved.id); cleanup(); throw e; }
         cleanup();
+        finalizeBlob(reserved.id, { sizeBytes: Number(size), mime: req.file.mimetype });
+        const oldBlobId = existing?.blobId || null;
 
         let node;
         if (existing) {
-          db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, storageId = ?, updatedAt = ? WHERE id = ?')
-            .run(size.toString(), req.file.mimetype, hit.strategy.id, nowIso(), existing.id);
+          db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, storageId = ?, blobId = ?, updatedAt = ? WHERE id = ?')
+            .run(size.toString(), req.file.mimetype, hit.strategy.id, reserved.id, nowIso(), existing.id);
           node = getNodeByPath(targetPath);
         } else {
           node = insertNode({
             email, parentId: parent.id, name: fileName, path: targetPath,
-            isDir: false, sizeBytes: size.toString(), mime: req.file.mimetype, storageId: hit.strategy.id,
+            isDir: false, sizeBytes: size.toString(), mime: req.file.mimetype, storageId: hit.strategy.id, blobId: reserved.id,
           });
         }
+        if (oldBlobId && oldBlobId !== reserved.id) releaseBlob(oldBlobId);
         recordTraffic(email, 'upload', size.toString());
         writeAudit({ email, action: 'upload', target: targetPath, bytes: size.toString(), ip: clientIp(req) });
         res.status(201).json({ item: itemView(node, hit.strategy), quota: quotaForUser(req.user), strategy: strategyView(hit) });
@@ -286,7 +292,7 @@ router.get('/download', async (req, res, next) => {
     const size = node ? Number(node.sizeBytes) : undefined;
     const mime = (node && node.mime) || 'application/octet-stream';
 
-    const stream = await getDriver(strategy.type).readStream(strategy, logical, { size, mime, name });
+    const stream = await getDriver(strategy.type).readStream(strategy, readPathOf(node, logical), { size, mime, name });
 
     res.setHeader('Content-Type', mime);
     res.setHeader('Content-Disposition', `${String(req.query.inline) === '1' ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`);
@@ -329,7 +335,9 @@ async function relocate(req, { srcLogical, destPath, newParentId, newName, isDir
   const destStrategy = destHit.strategy;
   const meta = { size: Number(node.sizeBytes), mime: node.mime, name: newName || node.name };
 
-  if (srcStrategy.id === destStrategy.id) {
+  if (node.blobId) {
+    // Blob 文件：改名/移动/跨用户转移都只改元数据，物理对象永不移动。
+  } else if (srcStrategy.id === destStrategy.id) {
     if (isDir && srcStrategy.type !== 'volume') {
       throw new ApiError(400, 'storage_unsupported', '远端存储不支持直接移动目录，请逐个文件移动');
     }
@@ -339,9 +347,10 @@ async function relocate(req, { srcLogical, destPath, newParentId, newName, isDir
     await transferAcross(srcStrategy, destStrategy, srcLogical, destPath, meta);
   }
 
+  const nextStorageId = node.blobId ? node.storageId : destStrategy.id;
   const tx = db.transaction(() => {
     db.prepare('UPDATE nodes SET parentId = ?, name = ?, path = ?, storageId = ?, updatedAt = ? WHERE id = ?')
-      .run(newParentId, newName || node.name, destPath, destStrategy.id, nowIso(), node.id);
+      .run(newParentId, newName || node.name, destPath, nextStorageId, nowIso(), node.id);
     if (node.isDir) {
       const descendants = descendantsOf(srcLogical).filter((d) => d.id !== node.id);
       for (const d of descendants) {

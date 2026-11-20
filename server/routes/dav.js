@@ -22,6 +22,7 @@ import { quotaForUser, quotaBig } from '../services/quota.js';
 import { recordTraffic } from '../services/traffic.js';
 import { writeAudit } from '../services/audit.js';
 import { resolveStorage } from '../services/bindings.js';
+import { readPathOf, writeBlobFromTemp, releaseBlob } from '../services/blobs.js';
 import { getDriver, driverCaps } from '../services/storage/driver.js';
 import { verifyAppPassword } from '../services/apppasswords.js';
 import { nowIso } from '../lib/format.js';
@@ -222,7 +223,7 @@ async function serveFile(req, res, { headOnly }) {
 
   if (headOnly) { res.status(200).end(); return; }
 
-  const stream = await getDriver(usedStrategy.type).readStream(usedStrategy, logical, { size, mime, name: node.name });
+  const stream = await getDriver(usedStrategy.type).readStream(usedStrategy, readPathOf(node, logical), { size, mime, name: node.name });
   stream.pipe(res);
   let counted = false;
   const done = () => {
@@ -295,16 +296,18 @@ router.put('/*', async (req, res, next) => {
     const mime = String(req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim() || 'application/octet-stream';
     const fileName = basenameOf(logical);
 
-    try {
-      await getDriver(hit.strategy.type).writeFromTemp(hit.strategy, logical, tmpFile, { size, mime, name: fileName });
-    } catch (e) { cleanup(); throw e; }
+    const blob = await writeBlobFromTemp({
+      strategy: hit.strategy, filename: fileName, tmpFile, sizeBytes: size, mime, createdBy: req.user.email,
+    });
     cleanup();
 
     if (existing) {
-      db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, storageId = ?, updatedAt = ? WHERE id = ?')
-        .run(String(size), mime, hit.strategy.id, nowIso(), existing.id);
+      const oldBlobId = existing.blobId || null;
+      db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, storageId = ?, blobId = ?, updatedAt = ? WHERE id = ?')
+        .run(String(size), mime, hit.strategy.id, blob.id, nowIso(), existing.id);
+      if (oldBlobId && oldBlobId !== blob.id) releaseBlob(oldBlobId);
     } else {
-      insertNode({ email, parentId: parent.id, name: fileName, path: logical, isDir: false, sizeBytes: String(size), mime, storageId: hit.strategy.id });
+      insertNode({ email, parentId: parent.id, name: fileName, path: logical, isDir: false, sizeBytes: String(size), mime, storageId: hit.strategy.id, blobId: blob.id });
     }
     recordTraffic(email, 'upload', String(size));
     writeAudit({ email, action: 'upload', target: logical, bytes: String(size), ip: clientIp(req), detail: JSON.stringify({ via: 'webdav' }) });

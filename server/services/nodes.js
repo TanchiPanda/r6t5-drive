@@ -30,13 +30,13 @@ export function getNodeByPath(path, { includeDeleted = false } = {}) {
   return db.prepare(sql).get(path);
 }
 
-export function insertNode({ email, parentId, name, path, isDir, sizeBytes = 0, mime = null, storageId = null }) {
+export function insertNode({ email, parentId, name, path, isDir, sizeBytes = 0, mime = null, storageId = null, blobId = null }) {
   const id = genId('n');
   const ts = nowIso();
   db.prepare(
-    `INSERT INTO nodes (id, email, parentId, name, path, isDir, sizeBytes, mime, storageId, deletedAt, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
-  ).run(id, email, parentId, name, path, isDir ? 1 : 0, sizeBytes, mime, storageId, ts, ts);
+    `INSERT INTO nodes (id, email, parentId, name, path, isDir, sizeBytes, mime, storageId, blobId, deletedAt, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
+  ).run(id, email, parentId, name, path, isDir ? 1 : 0, sizeBytes, mime, storageId, blobId, ts, ts);
   return db.prepare('SELECT * FROM nodes WHERE id = ?').get(id);
 }
 

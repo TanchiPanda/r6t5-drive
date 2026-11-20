@@ -6,6 +6,7 @@ import { normalizeLogicalPath } from '../lib/paths.js';
 import { ApiError, notFound } from '../lib/errors.js';
 import { resolveStorage } from '../services/bindings.js';
 import { getNodeByPath } from '../services/nodes.js';
+import { readPathOf } from '../services/blobs.js';
 import { getDriver } from '../services/storage/driver.js';
 import { parseMedia, classifyMedia } from '../services/metadata.js';
 
@@ -21,7 +22,7 @@ const HEAD_LIMIT = 2 * 1024 * 1024;
 async function readHead(strategy, logicalPath, node) {
   const driver = getDriver(strategy.type);
   const meta = { size: node ? Number(node.sizeBytes) : undefined, mime: node?.mime, name: logicalPath.split('/').pop() };
-  const stream = await driver.readStream(strategy, logicalPath, meta);
+  const stream = await driver.readStream(strategy, readPathOf(node, logicalPath), { ...meta, name: logicalPath.split('/').pop() });
 
   const chunks = [];
   let total = 0;

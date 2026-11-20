@@ -39,10 +39,29 @@ CREATE TABLE IF NOT EXISTS nodes (
   sizeBytes  INTEGER NOT NULL DEFAULT 0,
   mime       TEXT,
   storageId  TEXT,
+  blobId     INTEGER,
   deletedAt  TEXT,
   createdAt  TEXT NOT NULL,
   updatedAt  TEXT NOT NULL
 );
+
+-- 扁平 Blob：物理对象 = <策略根>/uploads/<索引>/<文件名>，索引号即 blobs.id
+CREATE TABLE IF NOT EXISTS blobs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  storageId  TEXT NOT NULL,
+  storageKey TEXT NOT NULL,
+  filename   TEXT NOT NULL,
+  sizeBytes  INTEGER NOT NULL DEFAULT 0,
+  mime       TEXT,
+  sha256     TEXT,
+  refCount   INTEGER NOT NULL DEFAULT 0,
+  state      TEXT NOT NULL DEFAULT 'active',
+  createdBy  TEXT,
+  createdAt  TEXT NOT NULL,
+  deletedAt  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_blobs_storage_key ON blobs(storageId, storageKey);
+CREATE INDEX IF NOT EXISTS idx_blobs_state ON blobs(state);
 
 -- 同一逻辑路径只有在「未删除」状态下才要求唯一：软删留下的 tombstone 不再占用路径
 CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_path_active ON nodes(path) WHERE deletedAt IS NULL;

@@ -50,6 +50,11 @@ export function migrate() {
   }
   db.exec(sql);
   // 老库补列（幂等）：P2 起用户组可指定默认存储策略
+  // Blob 存储改造：老库 nodes 补 blobId 列（可空，老数据继续走逻辑路径）
+  if (!db.prepare('PRAGMA table_info(nodes)').all().some((c) => c.name === 'blobId')) {
+    db.exec('ALTER TABLE nodes ADD COLUMN blobId INTEGER');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_nodes_blob ON nodes(blobId)');
   const groupCols = db.prepare('PRAGMA table_info(groups)').all().map((c) => c.name);
   if (!groupCols.includes('defaultStrategyId')) {
     db.exec('ALTER TABLE groups ADD COLUMN defaultStrategyId TEXT');

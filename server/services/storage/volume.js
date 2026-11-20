@@ -15,10 +15,12 @@ function safeParse(s) {
 }
 
 function safePhysical(strategy, logicalPath) {
-  const email = ownerOf(logicalPath);
+  const segs = String(logicalPath).split('/');
+  // 扁平 Blob 布局：uploads/<索引号>/<文件名>，首段不是邮箱而是保留目录名
+  const owner = segs[0] === 'uploads' ? 'uploads' : ownerOf(logicalPath);
   const root = path.resolve(rootFor(strategy));
-  const base = path.resolve(root, email);
-  const rest = logicalPath.split('/').slice(1);
+  const base = path.resolve(root, owner);
+  const rest = segs.slice(1);
   const phys = path.resolve(base, ...rest);
   if (phys !== base && !phys.startsWith(base + path.sep)) throw forbidden('物理路径越界');
   return phys;

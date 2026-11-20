@@ -274,9 +274,10 @@ function check(name, cond, detail) {
     const payload = new TextEncoder().encode('hello from s3 driver\n');
     let fd = new FormData(); fd.append('file', new Blob([payload], { type: 'text/plain' }), 'hello.txt');
     const up = await req('POST', '/api/files/upload?path=' + encodeURIComponent('alice@x.com/media'), { cookie: jar.user, raw: { body: fd, headers: {} } });
-    const s3Key = 'p2-prefix/alice@x.com/media/hello.txt';
+    const objects = Object.keys(fake.store['p2-bucket']);
+    const s3Key = objects.find((k) => k.startsWith('p2-prefix/uploads/') && k.endsWith('/hello.txt'));
     check('15a. 上传到 s3 绑定目录 201', up.status === 201 && up.json?.item?.storageId === s3Id, `status=${up.status} storageId=${up.json?.item?.storageId}`);
-    check('15b. 对象真的落在假 S3 里', !!fake.store['p2-bucket'][s3Key], `key=${s3Key} 存在=${!!fake.store['p2-bucket'][s3Key]}`);
+    check('15b. 对象真的落在假 S3 里（扁平 uploads/<索引>/<文件名>）', !!s3Key, `keys=${objects.join(',')}`);
 
     // 16. 列表：本地元数据 + 远端列举合并
     fake.store['p2-bucket']['p2-prefix/alice@x.com/media/remote-only.txt'] = {
@@ -304,9 +305,9 @@ function check(name, cond, detail) {
     // 19. 跨策略搬运：s3 → 本地卷
     const mv = await req('POST', '/api/files/move', { cookie: jar.user, body: { path: 'alice@x.com/media/hello.txt', targetPath: 'alice@x.com' } });
     check('19a. 跨策略移动 200', mv.status === 200, `status=${mv.status} code=${mv.json?.error?.code || 'ok'}`);
-    check('19b. 源对象已从 S3 删除', !fake.store['p2-bucket'][s3Key], `key 存在=${!!fake.store['p2-bucket'][s3Key]}`);
+    check('19b. Blob 移动只改元数据，原对象保留在原地', !!fake.store['p2-bucket'][s3Key], `key 存在=${!!fake.store['p2-bucket'][s3Key]}`);
     const rootDl = await req('GET', '/api/files/download?path=' + encodeURIComponent('alice@x.com/hello.txt'), { cookie: jar.user });
-    check('19c. 移动后本地卷可读', rootDl.status === 200 && rootDl.text.includes('hello from s3 driver'), `status=${rootDl.status} bytes=${rootDl.text.length}`);
+    check('19c. 移动后仍可按 blob 索引读到原字节', rootDl.status === 200 && rootDl.text.includes('hello from s3 driver'), `status=${rootDl.status} bytes=${rootDl.text.length}`);
 
     // 20. 仍被绑定的策略不能删；解绑后可删
     const delBound = await req('DELETE', `/api/admin/storage/${s3Id}`, { cookie: jar.admin });

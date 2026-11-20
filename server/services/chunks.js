@@ -16,6 +16,7 @@ import {
   uploadPartRange, uploadIncomplete, ApiError,
 } from '../lib/errors.js';
 import { getNodeByPath, insertNode } from './nodes.js';
+import { writeBlobFromTemp, releaseBlob } from './blobs.js';
 import { quotaForUser, quotaBig } from './quota.js';
 import { recordTraffic } from './traffic.js';
 import { writeAudit } from './audit.js';
@@ -389,10 +390,11 @@ export async function completeSession(user, uploadId, { mime } = {}) {
 
     // 合并阶段失败：保留分片以便断点续传；落盘/记账阶段失败：清理临时目录与会话行，避免半截残留
     const { merged, size: mergedSize } = await mergeSession(row);
+    let blob = null;
     try {
       const finalMime = mime || row.mime || 'application/octet-stream';
-      await getDriver(hit.strategy.type).writeFromTemp(hit.strategy, targetPath, merged, {
-        size: mergedSize, mime: finalMime, name: row.name,
+      blob = await writeBlobFromTemp({
+        strategy: hit.strategy, filename: row.name, tmpFile: merged, sizeBytes: mergedSize, mime: finalMime, createdBy: user.email,
       });
     } finally {
       fs.rmSync(merged, { force: true });
@@ -401,14 +403,16 @@ export async function completeSession(user, uploadId, { mime } = {}) {
     let node;
     try {
       if (existing) {
-        db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, storageId = ?, updatedAt = ? WHERE id = ?')
-          .run(String(mergedSize), mime || existing.mime || 'application/octet-stream', hit.strategy.id, nowIso(), existing.id);
+        const oldBlobId = existing.blobId || null;
+        db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, storageId = ?, blobId = ?, updatedAt = ? WHERE id = ?')
+          .run(String(mergedSize), finalMime, hit.strategy.id, blob.id, nowIso(), existing.id);
         node = getNodeByPath(targetPath);
+        if (oldBlobId && oldBlobId !== blob.id) releaseBlob(oldBlobId);
       } else {
         const parent = getNodeByPath(row.parentPath) || ensureDirNodes(user.email, row.parentPath);
         node = insertNode({
           email: user.email, parentId: parent.id, name: row.name, path: targetPath,
-          isDir: false, sizeBytes: String(mergedSize), mime: mime || 'application/octet-stream', storageId: hit.strategy.id,
+          isDir: false, sizeBytes: String(mergedSize), mime: finalMime, storageId: hit.strategy.id, blobId: blob.id,
         });
       }
       recordTraffic(user.email, 'upload', String(mergedSize));
