@@ -12,6 +12,7 @@
 Docker 自托管的轻量网盘：**一个容器跑一个站点，容器内提供多用户空间**。后端 Node.js + Express + SQLite，前端纯 HTML/CSS/JS（无构建步骤），文件元数据存本地 SQLite，物理存储可在本地数据卷、S3 兼容对象存储、只读 GitHub 仓库之间选择。
 
 
+- 在线演示站：https://r6t5-drive-preview.r6t5.dpdns.org
 - 仓库：https://github.com/TanchiPanda/r6t5-drive
 - 接口契约：[`docs/api-contract.md`](docs/api-contract.md)
 - 部署说明：[`docs/deploy.md`](docs/deploy.md)
