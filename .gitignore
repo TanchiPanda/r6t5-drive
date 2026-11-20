@@ -23,3 +23,6 @@ shots/
 
 # 系统垃圾
 .DS_Store
+
+# 本地 UI 备份（不入库）
+_backup/
