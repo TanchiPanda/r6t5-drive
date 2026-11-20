@@ -914,7 +914,7 @@
     if (currentType) typeSel.value = currentType.type;
     Admin.$('#st-name').value = s ? s.name : '';
     Admin.$('#st-region').value = s ? (s.region || '') : '';
-    const cap = s ? Admin.fromBytes(s.capacityBytes || 0) : { value: '', unit: 'GB' };
+    const cap = s ? Admin.fromBytes(s.capacityBytes || 0) : { value: 100, unit: 'GB' };
     Admin.$('#st-capacity').value = cap.value;
     Admin.$('#st-capacity-unit').value = cap.unit;
     Admin.$('#st-readonly').checked = !!(s && s.readOnly);
@@ -1282,9 +1282,10 @@
       Admin.$('#' + prefix + '-u').value = parts ? parts.unit : 'GB';
       Admin.refreshLimitPreview(prefix + '-v', prefix + '-u', prefix + '-pv');
     };
-    setLimit('g-space', g && g.spaceLimitBytes);
-    setLimit('g-file', g && g.maxFileSizeBytes);
-    setLimit('g-traffic', g && g.traffic7dLimitBytes);
+    // 新建时给真实默认值（不是占位符），避免用户以为已填好直接提交被拦
+    setLimit('g-space', g ? g.spaceLimitBytes : 10737418240);
+    setLimit('g-file', g ? g.maxFileSizeBytes : 2147483648);
+    setLimit('g-traffic', g ? g.traffic7dLimitBytes : 5368709120);
     Admin.$('#g-name').value = g ? g.name : '';
     Admin.$('#g-default').checked = !!(g && g.isDefault);
     Admin.$('#g-self-signup').checked = !!(g && g.allowSelfSignup);
