@@ -4,6 +4,7 @@ import { ENV } from './config.js';
 import { db } from './db.js';
 import { readUserSession, readAdminSession } from './lib/session.js';
 import { ApiError, errorBody } from './lib/errors.js';
+import { requestContext, currentContext, logEvent, logWarn, logError } from './lib/log.js';
 import { requireAdminApi, requireAdminPage, requireUser, resolveAdminAccess } from './middleware/auth.js';
 
 import setupRouter, { adminSetupRouter } from './routes/setup.js';
@@ -49,6 +50,28 @@ import ordersPublicRouter from './routes/orders-public.js';
 import storeShareRouter from './routes/store-share.js';
 
 const app = express();
+
+// 请求上下文 + 变更日志：所有非 GET/HEAD/OPTIONS 请求结束后打一行（已写审计的不重复打）
+app.use(requestContext);
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const started = Date.now();
+  const pathOnly = (req.originalUrl || req.url || '').split('?')[0];
+  res.on('finish', () => {
+    const ctx = currentContext();
+    if (ctx && ctx.logged) return; // 审计已输出带业务语义的日志
+    const fields = {
+      status: res.statusCode,
+      ms: Date.now() - started,
+      user: req.sudoUser?.email || req.user?.email || null,
+      ip: req.ip || req.socket?.remoteAddress || '',
+    };
+    if (res.statusCode >= 500) logError('http', `${req.method} ${pathOnly}`, fields);
+    else if (res.statusCode >= 400) logWarn('http', `${req.method} ${pathOnly}`, fields);
+    else logEvent('http', `${req.method} ${pathOnly}`, fields);
+  });
+  next();
+});
 
 // WebDAV 必须在 JSON 解析之前：PUT 请求体是原始二进制，不能被 express.json 吃掉
 app.use('/dav', davRouter);

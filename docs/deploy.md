@@ -272,3 +272,46 @@ location /dav {
 | 上传 / 改名 / 删除返回 403 `strategy_readonly` | 目标目录绑定的是只读存储策略（如 GitHub 归档） | 只读策略下不能写入、删除或改名；换到可写目录操作 |
 | 大文件上传中断 / 413 | 代理层限制了请求体，或超出用户组单文件配额 | 按第 2 节关闭代理缓冲并放开 `client_max_body_size`；超限属应用配额，需调高用户组上限 |
 | Finder/资源管理器列目录为空 | 对端策略为远端只读仓库且本地无元数据，或目录本身为空 | 先用网页端确认该目录下有文件；远端列举失败时会降级为空态 |
+
+## 10. 运行日志
+
+服务端所有运行日志都写 stdout，`docker compose logs` 即可查看；容器不需要额外挂载日志文件。
+
+### 10.1 日志格式
+
+每行一个事件，结构固定，便于 grep / awk：
+
+```
+2026-11-20 11:59:26 CHG  [audit] 上传文件 action=upload user=log@example.com target=log@example.com/f.txt bytes=10 ip=127.0.0.1
+2026-11-20 11:59:29 WARN [http] POST /api/files/mkdir status=404 ms=2 user=log@example.com ip=127.0.0.1
+```
+
+| 级别 | 含义 |
+|---|---|
+| `INFO` | 启动、扫描、定时任务等例行信息 |
+| `CHG` | **有变更**：登录、设置保存、上传/删除/移动、分享、订单、积分、兑换码等 |
+| `WARN` | 客户端错误（4xx）：密码错、权限不足、配额超限、路由不存在 |
+| `ERR` | 服务端错误（5xx）与未捕获异常 |
+
+标签：`[boot]` 启动、`[audit]` 业务变更（与审计表同源）、`[http]` 未落审计的写请求兜底、`[uploads]` 分片清理、`[cron]` 定时任务。
+
+### 10.2 常用过滤
+
+```bash
+docker compose logs -f drive                 # 实时跟踪
+docker compose logs drive | grep ' CHG '     # 只看变更
+docker compose logs drive | grep '[audit]'   # 只看业务动作（含操作者与目标）
+docker compose logs drive | grep 'ERR '      # 只看错误
+docker compose logs drive | grep 'user=alice@example.com'   # 按账号追踪
+docker compose logs drive | grep 'action=settings_update'   # 只看设置变更
+```
+
+### 10.3 日志级别
+
+| 环境变量 | 效果 |
+|---|---|
+| `LOG_LEVEL=info`（默认） | 输出 INFO / CHG / WARN / ERR |
+| `LOG_LEVEL=warn` | 只输出 WARN / ERR（安静模式） |
+| `LOG_LEVEL=error` | 只输出 ERR |
+
+> 日志不记录密码、会话 Cookie、应用密码、OAuth token 与文件内容；`CHG` 行里的 `detail` 只包含动作来源（如 `local`、`sudo`、`siteName` 这类键名）。

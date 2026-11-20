@@ -6,6 +6,7 @@ import { nowIso, genId } from './lib/format.js';
 import { sweepExpired as sweepExpiredUploads } from './services/chunks.js';
 import { start as startCron } from './services/cron.js';
 import { printBanner } from './lib/banner.js';
+import { logInfo, logError } from './lib/log.js';
 
 printBanner();
 
@@ -64,6 +65,19 @@ setInterval(sweepExpiredUploads, 3600 * 1000).unref();
 startCron();
 
 app.listen(ENV.PORT, '0.0.0.0', () => {
-  console.log(`[boot] R6T5 Drive 已启动，端口 ${ENV.PORT}`);
-  console.log(`[boot] DB=${ENV.DB_PATH}  STORAGE_ROOT=${ENV.STORAGE_ROOT}  DEV_AUTH=${ENV.DEV_AUTH ? 'on' : 'off'}`);
+  logInfo('boot', 'R6T5 Drive 已启动', {
+    port: ENV.PORT,
+    db: ENV.DB_PATH,
+    storageRoot: ENV.STORAGE_ROOT,
+    devAuth: ENV.DEV_AUTH ? 'on' : 'off',
+  });
+});
+
+// 进程级异常也要在容器日志里留痕，否则 docker logs 只剩一条重启记录
+process.on('unhandledRejection', (reason) => {
+  logError('boot', '未处理的 Promise 拒绝', { reason: reason instanceof Error ? reason.message : reason });
+});
+process.on('uncaughtException', (err) => {
+  logError('boot', '未捕获异常', { error: err?.message || err });
+  process.exit(1);
 });
