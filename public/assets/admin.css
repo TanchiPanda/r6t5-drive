@@ -60,6 +60,8 @@
 .timeline .tl-meta{font-size:var(--fs-xs);color:var(--faint)}
 
 /* ---------- 用户组卡片 ---------- */
+.group-card{transition:border-color var(--t-fast),box-shadow var(--t-fast),transform var(--t-fast)}
+.group-card:hover{border-color:var(--line-strong);box-shadow:var(--sh-2);transform:translateY(-1px)}
 .group-card .gc-head{display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)}
 .group-card .gc-head h3{margin:0;flex:1;min-width:0}
 .group-card .gc-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3);margin-bottom:var(--s3)}

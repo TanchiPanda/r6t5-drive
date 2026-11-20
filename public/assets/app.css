@@ -8,7 +8,7 @@
 
 /* ---------- 登录页 ---------- */
 .login-wrap{max-width:420px;margin:0 auto;padding:var(--s9) var(--s5) var(--s8)}
-.login-card{padding:var(--s6)}
+.login-card{padding:var(--s6);border-radius:var(--r-lg);box-shadow:var(--sh-2)}
 .login-card .brand{padding:0 0 var(--s5)}
 .login-logo{display:flex;align-items:center;gap:var(--s2);font-weight:700;font-size:var(--fs-lg)}
 .login-logo .dot{width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 12px var(--acc);flex:none}
@@ -29,8 +29,10 @@
 .crumb:hover{background:color-mix(in srgb,var(--fg) 6%,transparent);color:var(--fg)}
 .crumb.current{color:var(--fg);font-weight:600;cursor:default}
 .crumb-sep{color:var(--faint)}
-.searchbox{display:flex;align-items:center;gap:var(--s2);min-width:220px;max-width:320px;flex:1}
-.searchbox .input{min-width:0}
+.searchbox{position:relative;display:flex;align-items:center;gap:var(--s2);min-width:220px;max-width:320px;flex:1}
+.searchbox .search-ico{position:absolute;left:12px;width:var(--ic-sm);height:var(--ic-sm);color:var(--faint);pointer-events:none}
+.searchbox .input{min-width:0;padding-left:34px}
+.searchbox .btn{flex:none}
 
 /* ---------- 拖拽上传区 ---------- */
 .dz{border:1px dashed transparent;border-radius:var(--r-lg);transition:var(--t-fast)}
@@ -39,11 +41,13 @@
 
 /* ---------- 文件列表（行） ---------- */
 .file-list{display:flex;flex-direction:column;gap:2px}
-.file-row{display:grid;grid-template-columns:34px minmax(0,1fr) 130px 120px 110px;gap:var(--s3);
-  align-items:center;padding:10px var(--s3);border:1px solid transparent;border-radius:var(--r-md)}
-.file-row:hover{background:color-mix(in srgb,var(--fg) 3.5%,transparent)}
+.file-row{display:grid;grid-template-columns:36px minmax(0,1fr) 130px 120px 110px;gap:var(--s3);
+  align-items:center;padding:10px var(--s3);border:1px solid transparent;border-radius:var(--r-md);transition:background var(--t-fast),border-color var(--t-fast)}
+.file-row:hover{background:color-mix(in srgb,var(--fg) 4.5%,transparent);border-color:var(--line)}
 .file-row .name{display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer}
-.file-row .fic{width:20px;text-align:center;flex:none;color:var(--muted);font-size:var(--fs-lg)}
+.file-row .fic{width:36px;height:36px;border-radius:var(--r-sm);display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--muted);background:var(--panel-2);border:1px solid var(--line)}
+.file-row .fic svg{width:var(--ic-md);height:var(--ic-md)}
+.fic-svg{width:var(--ic-md);height:var(--ic-md);display:block;flex:none}
 .file-row .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:560}
 .file-row .meta{color:var(--muted);font-size:var(--fs-xs);text-align:right;font-variant-numeric:tabular-nums}
 .file-row .when{color:var(--faint);font-size:var(--fs-xs)}
@@ -55,8 +59,11 @@
 .file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:var(--s3)}
 .file-card{display:flex;flex-direction:column;gap:var(--s2);padding:var(--s4);border:1px solid var(--line);
   border-radius:var(--r-md);background:var(--panel);cursor:pointer;transition:var(--t-fast)}
-.file-card:hover{border-color:var(--line-strong);background:var(--panel-2)}
-.file-card .fic{font-size:30px;color:var(--muted);text-align:center;padding:var(--s3) 0}
+.file-card:hover{border-color:var(--line-strong);background:var(--panel-2);box-shadow:var(--sh-2);transform:translateY(-1px)}
+.file-card .fic{color:var(--muted);text-align:center;padding:var(--s3) 0;display:flex;justify-content:center}
+.file-card .fic svg{width:var(--ic-xl);height:var(--ic-xl)}
+.up-ico{display:inline-flex;align-items:center;justify-content:center;color:var(--muted)}
+.up-ico svg{width:var(--ic-sm);height:var(--ic-sm)}
 .file-card .fname{text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-sm);font-weight:560}
 .file-card .meta{display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--muted)}
 .file-card .ops{display:flex;gap:2px;justify-content:center}
@@ -151,7 +158,8 @@
 .pv-audio{display:flex;align-items:center;gap:var(--s4);padding:var(--s5) var(--s4);border:1px solid var(--line);
   border-radius:var(--r-md);background:var(--panel-2)}
 .pv-audio-ico{width:56px;height:56px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:50%;
-  background:color-mix(in srgb,var(--acc) 16%,transparent);color:var(--acc);font-size:24px}
+  background:color-mix(in srgb,var(--acc) 16%,transparent);color:var(--acc)}
+.pv-audio-ico svg{width:var(--ic-lg);height:var(--ic-lg)}
 .pv-audio audio{flex:1;min-width:0}
 .pv-epubbar{display:flex;align-items:center;gap:var(--s2);padding-bottom:var(--s2)}
 .pv-epub-title{font-size:var(--fs-sm);color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -237,9 +245,10 @@
 }
 
 /* ---------- 商店 ---------- */
-.store-card{display:flex;flex-direction:column;gap:2px}
+.store-card{display:flex;flex-direction:column;gap:2px;transition:border-color var(--t-fast),box-shadow var(--t-fast),transform var(--t-fast)}
+.store-card:hover{border-color:var(--line-strong);box-shadow:var(--sh-2);transform:translateY(-1px)}
 .store-price{display:flex;align-items:baseline;gap:8px;margin-top:10px}
-.store-price b{font-size:20px;color:var(--text)}
+.store-price b{font-size:20px;color:var(--fg)}
 .store-price .d{font-size:12.5px}
 .store-desc{margin:4px 0 0;padding-left:16px;color:var(--muted);font-size:13px;line-height:1.9}
 .store-desc li{list-style:disc}

@@ -197,16 +197,30 @@
     });
   }
 
-  /* ================= 图标（Unicode，纯 CSS） ================= */
+  /* ================= 本地 SVG 图标 ================= */
+
+  function svgIcon(name) {
+    return '<svg class="fic-svg" aria-hidden="true"><use href="/assets/icons/sprite.svg#i-' + name + '"></use></svg>';
+  }
+
+  function fileKind(item) {
+    var it = item || {};
+    if (it.type === 'dir') return 'folder';
+    var mime = String(it.mime || '').toLowerCase();
+    var ext = String(it.name || '').split('.').pop().toLowerCase();
+    if (mime.indexOf('image/') === 0 || ['svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'].indexOf(ext) >= 0) return 'image';
+    if (mime.indexOf('video/') === 0 || ['mp4', 'webm', 'ogg', 'mov', 'mkv'].indexOf(ext) >= 0) return 'video';
+    if (mime.indexOf('audio/') === 0 || ['mp3', 'm4a', 'aac', 'flac', 'wav', 'opus'].indexOf(ext) >= 0) return 'audio';
+    if (mime.indexOf('pdf') >= 0 || ext === 'pdf') return 'pdf';
+    if (ext === 'epub' || mime.indexOf('epub') >= 0) return 'epub';
+    if (mime.indexOf('zip') >= 0 || mime.indexOf('compressed') >= 0 || ['zip', '7z', 'rar', 'tar', 'gz'].indexOf(ext) >= 0) return 'zip';
+    if (ext === 'md' || ext === 'markdown' || mime.indexOf('markdown') >= 0) return 'text';
+    if (mime.indexOf('text/') === 0 || ['txt', 'js', 'ts', 'json', 'csv', 'xml', 'html', 'css', 'yml', 'yaml', 'sh', 'py', 'java', 'c', 'cpp', 'go', 'rs', 'toml', 'ini', 'log', 'sql'].indexOf(ext) >= 0) return 'code';
+    return 'file';
+  }
 
   function iconFor(item) {
-    if (item.type === 'dir') return '▣';
-    var mime = item.mime || '';
-    if (mime.indexOf('image/') === 0) return '▧';
-    if (mime.indexOf('pdf') >= 0) return '▤';
-    if (mime.indexOf('text/') === 0 || mime.indexOf('markdown') >= 0) return '✎';
-    if (mime.indexOf('zip') >= 0 || mime.indexOf('compressed') >= 0) return '▥';
-    return '▤';
+    return svgIcon(fileKind(item));
   }
 
   /* 搜索关键字高亮：先转义再包 <mark> */
@@ -278,7 +292,7 @@
         this.mask.id = 'm-preview';
         this.mask.innerHTML =
           '<div class="modal modal-wide"><div class="modal-head"><h3 id="pv-title">预览</h3>' +
-          '<div class="spacer"></div><button class="btn icon ghost" id="pv-close" type="button">✕</button></div>' +
+          '<div class="spacer"></div><button class="btn icon ghost" id="pv-close" type="button">' + svgIcon('close') + '</button></div>' +
           '<div class="modal-body" id="pv-body"></div></div>';
         document.body.appendChild(this.mask);
       }
@@ -413,7 +427,7 @@
     },
 
     renderAudio(url, body) {
-      body.innerHTML = '<div class="pv-audio"><div class="pv-audio-ico">♪</div>' +
+      body.innerHTML = '<div class="pv-audio"><div class="pv-audio-ico">' + svgIcon('audio') + '</div>' +
         '<audio controls preload="metadata" src="' + url + '"></audio></div>';
     },
 
@@ -497,13 +511,13 @@
 
       body.innerHTML =
         '<div class="pv-pdfbar">' +
-          '<button class="btn icon" type="button" id="pv-prev" title="上一页">‹</button>' +
+          '<button class="btn icon" type="button" id="pv-prev" title="上一页">' + svgIcon('arrow-left') + '</button>' +
           '<span class="pv-pager"><input class="input pv-page" id="pv-page" type="number" min="1" value="1"> / <span id="pv-total">' + doc.numPages + '</span></span>' +
-          '<button class="btn icon" type="button" id="pv-next" title="下一页">›</button>' +
+          '<button class="btn icon" type="button" id="pv-next" title="下一页">' + svgIcon('arrow-right') + '</button>' +
           '<span class="spacer"></span>' +
-          '<button class="btn icon" type="button" id="pv-zoom-out" title="缩小">−</button>' +
+          '<button class="btn icon" type="button" id="pv-zoom-out" title="缩小">' + svgIcon('minus') + '</button>' +
           '<span class="pv-zoom" id="pv-zoom">100%</span>' +
-          '<button class="btn icon" type="button" id="pv-zoom-in" title="放大">＋</button>' +
+          '<button class="btn icon" type="button" id="pv-zoom-in" title="放大">' + svgIcon('plus') + '</button>' +
         '</div>' +
         '<div class="pv-pdfpage"><canvas id="pv-canvas"></canvas></div>';
 
@@ -579,7 +593,7 @@
       try {
         signed = await R6T5.post('/api/files/embed/sign', { path: path });
       } catch (e) {
-        body.innerHTML = '<div class="empty"><div class="ico">▤</div><h3>无法在线打开</h3>' +
+        body.innerHTML = '<div class="empty"><div class="ico">' + svgIcon('file') + '</div><h3>无法在线打开</h3>' +
           '<p>' + R6T5.esc(previewErrText(e)) + '</p></div>';
         return;
       }
@@ -642,7 +656,7 @@
     },
 
     renderUnsupported(body, name) {
-      body.innerHTML = '<div class="empty"><div class="ico">▤</div><h3>暂不支持在线预览</h3>' +
+      body.innerHTML = '<div class="empty"><div class="ico">' + svgIcon('file') + '</div><h3>暂不支持在线预览</h3>' +
         '<p>该文件类型出于安全考虑不提供在线预览，请下载后查看。</p></div>';
     }
   };
@@ -988,7 +1002,7 @@
     var items = Files.state.items;
     if (!items.length) {
       area.innerHTML =
-        '<div class="empty"><div class="ico">▢</div><h3>' +
+        '<div class="empty"><div class="ico">' + svgIcon('folder') + '</div><h3>' +
         (Files.state.searching ? '没有找到匹配的文件' : '还没有文件') + '</h3>' +
         '<p>' + (Files.state.searching ? '换个关键字试试，或清空搜索回到当前目录' : '拖进来或点上传') + '</p></div>';
       renderBatchBar();
@@ -1068,21 +1082,21 @@
   function opsHtml(it) {
     var ops = '';
     if (it.type === 'file') {
-      ops += '<button class="btn sm ghost" data-op="preview" title="预览">◈</button>' +
-        '<button class="btn sm ghost" data-op="download" title="下载">↓</button>';
+      ops += '<button class="btn sm ghost" data-op="preview" title="预览">' + svgIcon('eye') + '</button>' +
+        '<button class="btn sm ghost" data-op="download" title="下载">' + svgIcon('download') + '</button>';
       if (isZipFile(it)) {
         var ro = strategyReadOnly();
         var exDis = ro ? ' disabled title="' + R6T5.esc(readOnlyTip()) + '"' : '';
-        ops += '<button class="btn sm ghost" data-op="extract" title="解压"' + exDis + '>▥</button>';
+        ops += '<button class="btn sm ghost" data-op="extract" title="解压"' + exDis + '>' + svgIcon('zip') + '</button>';
       }
     }
     // 分享是读操作：只读策略下仍然可用
-    ops += '<button class="btn sm ghost" data-op="share" title="分享">↗</button>';
+    ops += '<button class="btn sm ghost" data-op="share" title="分享">' + svgIcon('share') + '</button>';
     var ro2 = strategyReadOnly();
     var dis = ro2 ? ' disabled title="' + R6T5.esc(readOnlyTip()) + '"' : '';
-    ops += '<button class="btn sm ghost" data-op="rename" title="重命名"' + dis + '>✎</button>' +
-      '<button class="btn sm ghost" data-op="move" title="移动"' + dis + '>➦</button>' +
-      '<button class="btn sm ghost danger" data-op="delete" title="删除"' + dis + '>✕</button>';
+    ops += '<button class="btn sm ghost" data-op="rename" title="重命名"' + dis + '>' + svgIcon('pencil') + '</button>' +
+      '<button class="btn sm ghost" data-op="move" title="移动"' + dis + '>' + svgIcon('move') + '</button>' +
+      '<button class="btn sm ghost danger" data-op="delete" title="删除"' + dis + '>' + svgIcon('close') + '</button>';
     return ops;
   }
 
@@ -1405,7 +1419,7 @@
     catch (e) { R6T5.toastError(e); body.innerHTML = ''; return; }
     var items = res.items || [];
     if (!items.length) {
-      body.innerHTML = '<div class="empty"><div class="ico">↗</div><h3>还没有分享</h3>' +
+      body.innerHTML = '<div class="empty"><div class="ico">' + svgIcon('share') + '</div><h3>还没有分享</h3>' +
         '<p>在文件或文件夹上点击「分享」，即可生成对外访问链接。</p></div>';
       return;
     }
@@ -1551,7 +1565,7 @@
     var row = document.createElement('div');
     row.className = 'up-row card tight';
     row.innerHTML =
-      '<div class="row tight"><span class="up-ico">↑</span>' +
+      '<div class="row tight"><span class="up-ico">' + svgIcon('upload') + '</span>' +
       '<span class="up-name flex1 trunc"></span><span class="up-status faint"></span></div>' +
       '<div class="bar thin mt2"><i style="width:0%"></i></div>';
     row.querySelector('.up-name').textContent = file.name;
@@ -1602,7 +1616,7 @@
     var row = document.createElement('div');
     row.className = 'up-row card tight chunk-up';
     row.innerHTML =
-      '<div class="row tight"><span class="up-ico">↑</span>' +
+      '<div class="row tight"><span class="up-ico">' + svgIcon('upload') + '</span>' +
       '<span class="up-name flex1 trunc"></span><span class="up-status faint"></span></div>' +
       '<div class="bar thin mt2" role="progressbar" aria-label="上传进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i style="width:0%"></i></div>' +
       '<div class="row tight mt2 chunk-ops hide">' +
@@ -2315,7 +2329,7 @@
     catch (e) { R6T5.toastError(e); body.innerHTML = ''; return; }
     var items = res.items || [];
     if (!items.length) {
-      body.innerHTML = '<div class="empty"><div class="ico">♻</div><h3>回收站是空的</h3><p>删除的文件会先放到这里，保留 ' + (res.retentionDays || 30) + ' 天。</p></div>';
+      body.innerHTML = '<div class="empty"><div class="ico">' + svgIcon('trash') + '</div><h3>回收站是空的</h3><p>删除的文件会先放到这里，保留 ' + (res.retentionDays || 30) + ' 天。</p></div>';
       return;
     }
     body.innerHTML = items.map(function (it) {
@@ -2429,13 +2443,13 @@
   function renderRecent(list) {
     var box = document.getElementById('recent-list');
     if (!list.length) {
-      box.innerHTML = '<div class="empty"><div class="ico">▢</div><h3>最近还没有上传</h3></div>';
+      box.innerHTML = '<div class="empty"><div class="ico">' + svgIcon('list') + '</div><h3>最近还没有上传</h3></div>';
       return;
     }
     box.innerHTML = '<div class="table-wrap"><table class="table"><thead><tr><th>文件</th><th class="num">大小</th><th>上传时间</th></tr></thead><tbody>' +
       list.map(function (it) {
         var name = R6T5.basename(it.path);
-        return '<tr><td><div class="name"><span class="fic">▤</span><span class="fname">' + R6T5.esc(name) + '</span></div></td>' +
+        return '<tr><td><div class="name"><span class="fic">' + iconFor({ name: name }) + '</span><span class="fname">' + R6T5.esc(name) + '</span></div></td>' +
           '<td class="num">' + R6T5.fmtBytes(it.sizeBytes) + '</td><td>' + R6T5.fmtAgo(it.at) + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
@@ -2669,10 +2683,10 @@
       loadShareDir('');
     } else {
       var previewBtn = share.allowPreview
-        ? '<button class="btn" id="share-preview-btn" type="button">◈ 预览</button>' : '';
+        ? '<button class="btn" id="share-preview-btn" type="button">' + svgIcon('eye') + ' 预览</button>' : '';
       body.innerHTML = head +
         '<div class="share-actions">' +
-        '<a class="btn primary" id="share-download-btn" href="' + shareDownloadUrl('') + '">↓ 下载</a>' +
+        '<a class="btn primary" id="share-download-btn" href="' + shareDownloadUrl('') + '">' + svgIcon('download') + ' 下载</a>' +
         previewBtn + '</div>';
       var pv = document.getElementById('share-preview-btn');
       if (pv) pv.addEventListener('click', function () {
@@ -2701,7 +2715,7 @@
     renderShareCrumbs(res.crumbs || []);
     var items = res.items || [];
     if (!items.length) {
-      listBox.innerHTML = '<div class="empty"><div class="ico">▢</div><h3>文件夹是空的</h3></div>';
+      listBox.innerHTML = '<div class="empty"><div class="ico">' + svgIcon('folder') + '</div><h3>文件夹是空的</h3></div>';
       return;
     }
     listBox.innerHTML = '<div class="table-wrap"><table class="table"><thead><tr>' +
@@ -2710,13 +2724,13 @@
         var size = it.type === 'dir' ? '—' : (it.sizeBytes == null ? '—' : R6T5.fmtBytes(it.sizeBytes));
         var ops = '';
         if (it.type === 'file') {
-          ops += '<a class="btn sm ghost" href="' + shareDownloadUrl(it.path) + '" title="下载">↓</a>';
+          ops += '<a class="btn sm ghost" href="' + shareDownloadUrl(it.path) + '" title="下载">' + svgIcon('download') + '</a>';
           if (PublicShare.meta.allowPreview) {
-            ops += '<button class="btn sm ghost" data-op="preview" title="预览">◈</button>';
+            ops += '<button class="btn sm ghost" data-op="preview" title="预览">' + svgIcon('eye') + '</button>';
           }
         }
         return '<tr class="file-row" data-path="' + R6T5.esc(it.path) + '" data-type="' + it.type + '">' +
-          '<td><div class="name"><span class="fic">' + R6T5.esc(iconFor(it)) + '</span>' +
+          '<td><div class="name"><span class="fic">' + iconFor(it) + '</span>' +
           '<span class="fname" title="' + R6T5.esc(it.name) + '">' + R6T5.esc(it.name) + '</span></div></td>' +
           '<td class="num meta">' + size + '</td>' +
           '<td class="when">' + R6T5.fmtAgo(it.updatedAt) + '</td>' +

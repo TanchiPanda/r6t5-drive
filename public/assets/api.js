@@ -118,7 +118,8 @@
     /* ---------- 顶部主题按钮 ---------- */
     mountThemeBtn(node) {
       if (!node) return;
-      const paint = () => { node.textContent = R6T5.theme.get() === 'light' ? '☀' : '☾'; node.title = '切换明暗主题'; };
+      const themeIcon = name => '<svg class="fic-svg" aria-hidden="true"><use href="/assets/icons/sprite.svg#i-' + name + '"></use></svg>';
+      const paint = () => { node.innerHTML = themeIcon(R6T5.theme.get() === 'light' ? 'sun' : 'moon'); node.title = '切换明暗主题'; };
       node.addEventListener('click', () => { R6T5.theme.toggle(); paint(); });
       paint();
     },

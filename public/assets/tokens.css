@@ -3,25 +3,26 @@
 
 :root{
   /* 底色层 */
-  --bg:#0e1512;
-  --bg-soft:#111a15;
-  --panel:#151f1b;
-  --panel-2:#1a2620;
-  --panel-3:#21302a;
-  --line:rgba(255,255,255,.09);
-  --line-strong:rgba(255,255,255,.17);
+  --bg:#0c120f;
+  --bg-soft:#101815;
+  --panel:#15201b;
+  --panel-2:#1b2822;
+  --panel-3:#23332b;
+  --line:rgba(255,255,255,.08);
+  --line-strong:rgba(255,255,255,.16);
 
   /* 文字 */
-  --fg:#e6f0ea;
-  --fg-dim:#c3d3cb;
-  --muted:#93a89e;
-  --faint:#6d8279;
+  --fg:#e8f1ec;
+  --fg-dim:#c5d5cd;
+  --muted:#98aca2;
+  --faint:#71867d;
 
   /* 主色 / 强调 */
-  --acc:#4a9e6e;
-  --acc-ink:#d7f3e2;
+  --acc:#55b97e;
+  --acc-ink:#dcf5e6;
   --acc-2:#ffd54f;
-  --acc-grad:linear-gradient(135deg,#3f8d61,#55b47c);
+  --acc-grad:linear-gradient(135deg,#439a68,#5fc789);
+  --acc-surface:color-mix(in srgb,var(--acc) 12%,transparent);
 
   /* 语义色 */
   --ok:#7ed6a5;
@@ -34,42 +35,45 @@
   --info-soft:rgba(107,168,224,.12);
 
   /* 阴影与圆角 */
-  --sh-1:0 1px 2px rgba(0,0,0,.28);
-  --sh-2:0 10px 30px -12px rgba(0,0,0,.55);
-  --sh-3:0 24px 60px -20px rgba(0,0,0,.7);
+  --sh-1:0 1px 2px rgba(0,0,0,.24);
+  --sh-2:0 12px 32px -14px rgba(0,0,0,.58);
+  --sh-3:0 28px 64px -22px rgba(0,0,0,.72);
   --r-xs:6px;
-  --r-sm:9px;
-  --r-md:12px;
-  --r-lg:16px;
-  --r-xl:22px;
+  --r-sm:10px;
+  --r-md:13px;
+  --r-lg:18px;
+  --r-xl:24px;
   --r-pill:999px;
 
   /* 间距刻度 */
   --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:20px;--s6:24px;--s7:32px;--s8:40px;--s9:56px;
 
   /* 字体 */
-  --font:"Inter","PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;
-  --font-mono:"JetBrains Mono","SFMono-Regular",ui-monospace,Consolas,monospace;
+  --font:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;
   --fs-xs:11.5px;--fs-sm:12.5px;--fs-md:14px;--fs-lg:16px;--fs-xl:20px;--fs-2xl:26px;--fs-3xl:34px;
+
+  /* 图标 */
+  --ic-xs:14px;--ic-sm:16px;--ic-md:18px;--ic-lg:24px;--ic-xl:32px;
 
   /* 动效 */
   --t-fast:120ms ease;
   --t:200ms cubic-bezier(.2,.7,.3,1);
 
   /* 布局尺寸 */
-  --sidebar-w:232px;
-  --topbar-h:60px;
-  --page-max:1220px;
+  --sidebar-w:248px;
+  --topbar-h:62px;
+  --page-max:1240px;
 
   color-scheme:dark;
 }
 
 html[data-theme="light"]{
   --bg:#eef3ef;
-  --bg-soft:#e8efe9;
+  --bg-soft:#e7efe9;
   --panel:#ffffff;
-  --panel-2:#f6faf7;
-  --panel-3:#eaf1ec;
+  --panel-2:#f5faf6;
+  --panel-3:#e8f1ec;
   --line:rgba(16,32,24,.10);
   --line-strong:rgba(16,32,24,.20);
 
@@ -78,10 +82,11 @@ html[data-theme="light"]{
   --muted:#5d6f66;
   --faint:#7d8f86;
 
-  --acc:#3f8d61;
+  --acc:#3f9665;
   --acc-ink:#0f2d1e;
   --acc-2:#b8860b;
-  --acc-grad:linear-gradient(135deg,#3f8d61,#4fa672);
+  --acc-grad:linear-gradient(135deg,#3f8d61,#50a874);
+  --acc-surface:color-mix(in srgb,var(--acc) 10%,transparent);
 
   --ok:#2f9d6b;
   --warn:#a9761c;
@@ -93,8 +98,8 @@ html[data-theme="light"]{
   --info-soft:rgba(47,116,173,.10);
 
   --sh-1:0 1px 2px rgba(20,40,30,.08);
-  --sh-2:0 8px 24px -14px rgba(20,40,30,.28);
-  --sh-3:0 20px 50px -22px rgba(20,40,30,.35);
+  --sh-2:0 10px 28px -16px rgba(20,40,30,.30);
+  --sh-3:0 22px 52px -24px rgba(20,40,30,.38);
 
   color-scheme:light;
 }

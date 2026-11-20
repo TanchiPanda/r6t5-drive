@@ -6,6 +6,7 @@
 
   function $ (s, r) { return (r || document).querySelector(s); }
   function $$ (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+  function svgIcon (name) { return '<svg class="fic-svg" aria-hidden="true"><use href="/assets/icons/sprite.svg#i-' + name + '"></use></svg>'; }
 
   function money (minor) {
     var n = Number(minor || 0) / 100;
@@ -56,10 +57,10 @@
     var sto = state.products.filter(function (p) { return p.enabled && isStorage(p); });
     $('#list-membership').innerHTML = mem.length
       ? mem.map(cardHtml).join('')
-      : '<div class="empty"><div class="ico">◈</div><h3>还没有会员商品</h3><p class="d">等管理员上架后就能在这里购买。</p></div>';
+      : '<div class="empty"><div class="ico">' + svgIcon('bag') + '</div><h3>还没有会员商品</h3><p class="d">等管理员上架后就能在这里购买。</p></div>';
     $('#list-storage').innerHTML = sto.length
       ? sto.map(cardHtml).join('')
-      : '<div class="empty"><div class="ico">▢</div><h3>还没有容量包</h3><p class="d">等管理员上架后就能在这里扩容。</p></div>';
+      : '<div class="empty"><div class="ico">' + svgIcon('folder') + '</div><h3>还没有容量包</h3><p class="d">等管理员上架后就能在这里扩容。</p></div>';
   }
 
   function renderMe () {

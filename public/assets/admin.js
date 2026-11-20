@@ -32,6 +32,7 @@
 
     /* ---------- 小工具 ---------- */
     esc: s => R6T5.esc(s),
+    icon: name => '<svg class="fic-svg" aria-hidden="true"><use href="/assets/icons/sprite.svg#i-' + name + '"></use></svg>',
     bytes: n => R6T5.fmtBytes(n),
     time: t => R6T5.fmtTime(t),
     ago: t => R6T5.fmtAgo(t),
@@ -328,7 +329,7 @@
   function renderGroups(groups) {
     const box = Admin.$('#group-dist');
     if (!box) return;
-    if (!groups.length) { box.innerHTML = '<div class="empty"><div class="ico">▢</div><h3>还没有用户组</h3><p>请先在用户组页面创建分组。</p></div>'; return; }
+    if (!groups.length) { box.innerHTML = '<div class="empty"><div class="ico">' + Admin.icon('chart') + '</div><h3>还没有用户组</h3><p>请先在用户组页面创建分组。</p></div>'; return; }
     const max = Math.max(1, ...groups.map(g => g.userCount || 0));
     box.innerHTML = groups.map(g => {
       const pct = Math.round((g.userCount || 0) / max * 100);
@@ -556,7 +557,7 @@
     const items = (d && d.items) || [];
     Admin.$('#user-total').textContent = (d && d.total) != null ? d.total + ' 人' : '—';
     if (!items.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="8"><div class="empty"><div class="ico">▢</div><h3>没有匹配的用户</h3><p>调整搜索条件，或从 Supabase 同步用户。</p></div></td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8"><div class="empty"><div class="ico">' + Admin.icon('user') + '</div><h3>没有匹配的用户</h3><p>调整搜索条件，或先创建本地账号。</p></div></td></tr>';
       return;
     }
     tbody.innerHTML = items.map(u => {
@@ -840,7 +841,7 @@
     catch (e) { Admin.alert(alertBox, e, '存储策略读取失败'); return; }
     strategies = (d && d.items) || [];
     if (!strategies.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="8"><div class="empty"><div class="ico">▢</div><h3>还没有存储策略</h3><p>添加一条本地数据卷后，站点才能接收文件。</p><div class="actions"><button class="btn primary" type="button" id="empty-add">添加策略</button></div></div></td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8"><div class="empty"><div class="ico">' + Admin.icon('folder') + '</div><h3>还没有存储策略</h3><p>添加一条本地数据卷后，站点才能接收文件。</p><div class="actions"><button class="btn primary" type="button" id="empty-add">添加策略</button></div></div></td></tr>';
       const ea = Admin.$('#empty-add');
       if (ea) ea.addEventListener('click', () => openStrategyModal(null));
       return;
@@ -1066,7 +1067,7 @@
     catch (e) { Admin.toastErr(e); tbody.innerHTML = ''; return; }
     const items = (d && d.items) || [];
     if (!items.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="4"><div class="empty"><div class="ico">▢</div><h3>还没有目录绑定</h3><p>把某个目录映射到指定策略；未命中绑定的目录走用户组默认或本地默认。</p></div></td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4"><div class="empty"><div class="ico">' + Admin.icon('move') + '</div><h3>还没有目录绑定</h3><p>把某个目录映射到指定策略；未命中绑定的目录走用户组默认或本地默认。</p></div></td></tr>';
       return;
     }
     tbody.innerHTML = items.map(b => {
@@ -1240,7 +1241,7 @@
     catch (e) { Admin.alert(alertBox, e, '用户组读取失败'); return; }
     const items = (d && d.items) || [];
     if (!items.length) {
-      box.innerHTML = '<div class="empty"><div class="ico">▢</div><h3>还没有用户组</h3><p>创建用户组以分配空间、单文件与流量上限。</p><div class="actions"><button class="btn primary" type="button" id="empty-add">新建用户组</button></div></div>';
+      box.innerHTML = '<div class="empty"><div class="ico">' + Admin.icon('chart') + '</div><h3>还没有用户组</h3><p>创建用户组以分配空间、单文件与流量上限。</p><div class="actions"><button class="btn primary" type="button" id="empty-add">新建用户组</button></div></div>';
       Admin.$('#empty-add').addEventListener('click', () => openGroupModal(null));
       return;
     }
@@ -1385,7 +1386,7 @@
     Admin.$('#share-count').textContent = '共 ' + ((d && d.total) != null ? d.total : items.length) + ' 条';
 
     if (!items.length) {
-      box.innerHTML = '<div class="empty"><div class="ico">↗</div><h3>没有匹配的分享</h3>' +
+      box.innerHTML = '<div class="empty"><div class="ico">' + Admin.icon('share') + '</div><h3>没有匹配的分享</h3>' +
         '<p>调整状态或邮箱筛选后重试；当前还没有对外分享链接。</p></div>';
       return;
     }
@@ -1505,7 +1506,7 @@
     Admin.$('#audit-next').disabled = auditState.page >= pages;
 
     if (!items.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="empty"><div class="ico">▢</div><h3>没有审计记录</h3><p>调整动作或邮箱筛选后重试。</p></div></td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="empty"><div class="ico">' + Admin.icon('list') + '</div><h3>没有审计记录</h3><p>调整动作或邮箱筛选后重试。</p></div></td></tr>';
       return;
     }
     tbody.innerHTML = items.map(a =>
@@ -2107,7 +2108,7 @@
     shopState.products = d.items || [];
     Admin.$('#p-count').textContent = '共 ' + shopState.products.length + ' 个';
     if (!shopState.products.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="empty"><div class="ico">◈</div><h3>还没有商品</h3><p>用上面的表单创建第一个会员或容量包。</p></div></td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="empty"><div class="ico">' + Admin.icon('bag') + '</div><h3>还没有商品</h3><p>用上面的表单创建第一个会员或容量包。</p></div></td></tr>';
       return;
     }
     tbody.innerHTML = shopState.products.map(p => {
@@ -2183,7 +2184,7 @@
     shopState.orders = items;
     Admin.$('#o-count').textContent = '共 ' + (d.total != null ? d.total : items.length) + ' 条';
     if (!items.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="9"><div class="empty"><div class="ico">▢</div><h3>没有订单</h3></div></td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="9"><div class="empty"><div class="ico">' + Admin.icon('list') + '</div><h3>没有订单</h3></div></td></tr>';
       return;
     }
     tbody.innerHTML = items.map(o => {
@@ -2228,7 +2229,7 @@
     shopState.codes = items;
     Admin.$('#r-list-count').textContent = '共 ' + items.length + ' 个';
     if (!items.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="empty"><div class="ico">▢</div><h3>还没有兑换码</h3></div></td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="empty"><div class="ico">' + Admin.icon('ticket') + '</div><h3>还没有兑换码</h3></div></td></tr>';
       return;
     }
     tbody.innerHTML = items.map(c => {
@@ -2311,7 +2312,7 @@
     catch (e) { R6T5.toastError(e); return; }
     const items = d.items || [];
     if (!items.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="6"><div class="empty"><div class="ico">▢</div><h3>没有流水</h3></div></td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6"><div class="empty"><div class="ico">' + Admin.icon('chart') + '</div><h3>没有流水</h3></div></td></tr>';
       return;
     }
     tbody.innerHTML = items.map(r => '<tr><td>' + Admin.time(r.createdAt) + '</td>' +
