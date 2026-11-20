@@ -5,7 +5,7 @@ import { normalizeLogicalPath } from '../lib/paths.js';
 import { ApiError, notFound } from '../lib/errors.js';
 import { resolveStorage } from '../services/bindings.js';
 import { getNodeByPath } from '../services/nodes.js';
-import { sendPreview, classify, previewable, unsupportedReason } from '../services/preview.js';
+import { sendPreview, classify, previewable, unsupportedReason, listZipEntries } from '../services/preview.js';
 import { extOfPath, OFFICE_EXT, readPreviewConfig } from '../services/preview-config.js';
 
 const router = Router();
@@ -27,6 +27,17 @@ router.get('/', async (req, res, next) => {
     const logical = normalizeLogicalPath(String(req.query.path || ''), req.user.email);
     const { strategy, node } = await resolveTarget(req, logical);
     await sendPreview({ req, res, strategy, logicalPath: logical, node });
+  } catch (e) { next(e); }
+});
+
+// GET /api/files/preview/zip?path=
+router.get('/zip', async (req, res, next) => {
+  try {
+    const logical = normalizeLogicalPath(String(req.query.path || ''), req.user.email);
+    const { strategy, node } = await resolveTarget(req, logical);
+    if (!logical.toLowerCase().endsWith('.zip')) throw new ApiError(415, 'preview_unsupported', '仅支持 ZIP 清单预览');
+    const result = await listZipEntries({ strategy, logicalPath: logical, node });
+    res.json(result);
   } catch (e) { next(e); }
 });
 

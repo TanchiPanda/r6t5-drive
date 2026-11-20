@@ -45,45 +45,10 @@
     <main class="main">
       <div class="content">
         <div class="page-head">
-          <div><h1>用户</h1><p class="sub">身份数据源、用户分组与禁用管理</p></div>
+          <div><h1>用户</h1><p class="sub">数据卷账号、用户分组与禁用管理</p></div>
         </div>
         <div class="stack">
           <div id="page-alert" class="page-alert hide"></div>
-
-          <div class="card">
-            <div class="card-head">
-              <h3>Supabase 配置</h3>
-              <span class="hint">身份认证数据源，密钥仅服务端保存</span>
-              <div class="actions">
-                <button class="btn sm" id="btn-sb-test" type="button">连通性自检</button>
-              </div>
-            </div>
-            <div id="sb-alert" class="page-alert hide"></div>
-            <div id="sb-test-result" class="page-alert hide"></div>
-            <div class="grid g2">
-              <div>
-                <div id="sb-info"></div>
-              </div>
-              <form id="sb-form" novalidate>
-                <div class="field">
-                  <label for="sb-url">Supabase URL</label>
-                  <input class="input" id="sb-url" name="url" type="text" placeholder="https://xxx.supabase.co" autocomplete="off">
-                </div>
-                <div class="field">
-                  <label for="sb-anon">anon Key</label>
-                  <input class="input" id="sb-anon" name="anonKey" type="password" placeholder="anon public key" autocomplete="off">
-                </div>
-                <div class="field">
-                  <label for="sb-service">service Key</label>
-                  <input class="input" id="sb-service" name="serviceKey" type="password" placeholder="service role key" autocomplete="off">
-                  <span class="login-err" id="sb-err"></span>
-                </div>
-                <div class="row">
-                  <button class="btn primary" type="submit">保存配置</button>
-                </div>
-              </form>
-            </div>
-          </div>
 
           <div class="card">
             <div class="card-head">
@@ -91,7 +56,6 @@
               <span class="hint" id="user-total">—</span>
               <div class="actions">
                 <button class="btn" id="btn-add-user" type="button">新建账号</button>
-                <button class="btn" id="btn-sync" type="button">从 Supabase 同步用户</button>
               </div>
             </div>
             <div class="toolbar">
@@ -184,7 +148,6 @@
         <label class="del-option"><input type="radio" name="del-files" value="1"><span>删账号并删除其文件目录</span></label>
       </div>
       <div class="del-warn hide" id="del-files-warn">将同时删除该邮箱下全部文件与回收站内容，不可恢复</div>
-      <div class="note warn mt2 hide" id="del-sb-note"><span class="ico">!</span><div>Supabase 账号只删除本地记录，Supabase 侧用户不会被动。</div></div>
       <div class="login-err mt2" id="del-err"></div>
     </div>
     <div class="modal-foot">

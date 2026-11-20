@@ -201,7 +201,6 @@
     Admin.bindLogout();
     await Admin.requireAdmin();
     await Admin.loadSetupNote();
-    await initUserSource();
 
     const alertBox = Admin.$('#page-alert');
     let overview;
@@ -435,17 +434,7 @@
     Admin.bindLogout();
     await Admin.requireAdmin();
     await loadGroupsForOptions();
-    await loadSupabase();
     await loadUsers();
-
-    const sync = Admin.$('#btn-sync');
-    if (sync) sync.addEventListener('click', onSync);
-
-    const test = Admin.$('#btn-sb-test');
-    if (test) test.addEventListener('click', onSupabaseTest);
-
-    const form = Admin.$('#sb-form');
-    if (form) form.addEventListener('submit', onSupabaseSave);
 
     const search = Admin.$('#user-search');
     if (search) search.addEventListener('input', () => {

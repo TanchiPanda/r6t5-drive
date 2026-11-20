@@ -220,7 +220,7 @@
 
   /* ================= 通用：在线预览组件（文件页 / 公开分享页复用） ================= */
 
-  var PREVIEW_KIND_LABEL = { image: '图片', video: '视频', pdf: 'PDF', text: '文本', markdown: 'Markdown' };
+  var PREVIEW_KIND_LABEL = { image: '图片', video: '视频', audio: '音频', pdf: 'PDF', epub: 'ePub', zip: '压缩包', text: '文本', markdown: 'Markdown' };
 
   /* 按扩展名粗判类型（公开分享页没有 meta 接口时使用；文件页以 meta 为准） */
   function kindByName(name) {
@@ -229,6 +229,9 @@
     if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'].indexOf(ext) >= 0) return 'image';
     if (['mp4', 'webm', 'ogg', 'mov', 'mkv'].indexOf(ext) >= 0) return 'video';
     if (ext === 'pdf') return 'pdf';
+    if (['mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus'].indexOf(ext) >= 0) return 'audio';
+    if (ext === 'epub') return 'epub';
+    if (ext === 'zip') return 'zip';
     if (ext === 'md' || ext === 'markdown') return 'markdown';
     if (['txt', 'js', 'ts', 'json', 'csv', 'xml', 'html', 'css', 'yml', 'yaml', 'sh', 'py', 'java', 'c', 'cpp', 'go', 'rs', 'toml', 'ini', 'log', 'sql'].indexOf(ext) >= 0) return 'text';
     return 'unsupported';
@@ -244,6 +247,11 @@
       case 7: return 90;
       default: return 0;
     }
+  }
+
+  function monacoLang(lang) {
+    var map = { plaintext: 'plaintext', markdown: 'markdown', shell: 'shell', yaml: 'yaml', jsx: 'javascript', tsx: 'typescript', ini: 'ini', conf: 'ini' };
+    return map[lang] || lang || 'plaintext';
   }
 
   function previewErrText(e) {
@@ -312,6 +320,10 @@
 
     destroyPdf() {
       if (this.pdfTask) { try { this.pdfTask.destroy(); } catch (_) {} this.pdfTask = null; }
+      if (this.art) { try { this.art.destroy(false); } catch (_) {} this.art = null; }
+      if (this.epubRendition) { try { this.epubRendition.destroy(); } catch (_) {} this.epubRendition = null; }
+      if (this.epubBook) { try { this.epubBook.destroy(); } catch (_) {} this.epubBook = null; }
+      if (this.monacoEditor) { try { this.monacoEditor.dispose(); } catch (_) {} this.monacoEditor = null; }
       if (this._pdfResizeHandler) {
         window.removeEventListener('resize', this._pdfResizeHandler);
         this._pdfResizeHandler = null;
@@ -323,7 +335,10 @@
       var body = this.body;
       try {
         if (kind === 'image') await this.renderImage(url, body);
-        else if (kind === 'video') this.renderVideo(url, body);
+        else if (kind === 'video') await this.renderVideo(url, body);
+        else if (kind === 'audio') this.renderAudio(url, body);
+        else if (kind === 'epub') await this.renderEpub(url, body);
+        else if (kind === 'zip') await this.renderZip(body, opts || {});
         else if (kind === 'pdf') await this.renderPdf(url, body, opts || {});
         else if (kind === 'office') await this.renderOffice(body, opts || {});
         else if (kind === 'markdown') await this.renderMarkdown(url, body);
@@ -355,9 +370,98 @@
         (rot ? ' style="transform:rotate(' + rot + 'deg)"' : '') + ' alt="' + R6T5.esc(name || '图片') + '"></div>';
     },
 
-    renderVideo(url, body) {
+    loadScriptOnce(src) {
+      this._scripts = this._scripts || {};
+      if (this._scripts[src]) return this._scripts[src];
+      this._scripts[src] = new Promise(function (resolve, reject) {
+        var el = document.createElement('script');
+        el.src = src;
+        el.onload = function () { resolve(); };
+        el.onerror = function () { reject(new Error('script_load_failed')); };
+        document.head.appendChild(el);
+      });
+      return this._scripts[src];
+    },
+
+    async renderVideo(url, body) {
+      try {
+        await this.loadScriptOnce('/vendor/artplayer/artplayer.js');
+      } catch (_) { /* 退回原生播放器 */ }
+      if (window.Artplayer) {
+        body.innerHTML = '<div class="pv-video-art"></div>';
+        try {
+          this.art = new window.Artplayer({
+            container: body.querySelector('.pv-video-art'),
+            url: url,
+            autoplay: false,
+            muted: false,
+            setting: true,
+            playbackRate: true,
+            aspectRatio: true,
+            fullscreen: true,
+            fullscreenWeb: true,
+            hotkey: true,
+            mini: true,
+            theme: '#63C08B',
+            lang: 'zh-cn',
+          });
+          return;
+        } catch (_) { /* 失败则走原生 */ }
+      }
       body.innerHTML = '<div class="pv-media pv-video">' +
         '<video controls preload="metadata" src="' + url + '"></video></div>';
+    },
+
+    renderAudio(url, body) {
+      body.innerHTML = '<div class="pv-audio"><div class="pv-audio-ico">♪</div>' +
+        '<audio controls preload="metadata" src="' + url + '"></audio></div>';
+    },
+
+    async renderEpub(url, body) {
+      await this.loadScriptOnce('/vendor/jszip/jszip.min.js');
+      await this.loadScriptOnce('/vendor/epubjs/epub.min.js');
+      if (!window.ePub) throw new Error('epub_unavailable');
+      body.innerHTML = '<div class="pv-epubbar">' +
+        '<button class="btn sm" type="button" id="pv-epub-prev">上一章</button>' +
+        '<span class="pv-epub-title" id="pv-epub-title"></span>' +
+        '<button class="btn sm" type="button" id="pv-epub-next">下一章</button>' +
+        '</div><div class="pv-epub" id="pv-epub"></div>';
+      // 以二进制打开，避免 epub.js 把内部资源路径解析到 /api/files/ 下
+      var res = await this.handleRes(await fetch(url, { credentials: 'same-origin' }));
+      var book = window.ePub(await res.arrayBuffer(), { openAs: 'binary' });
+      this.epubBook = book;
+      var rendition = book.renderTo('pv-epub', { width: '100%', height: '60vh', flow: 'scrolled-doc', manager: 'default' });
+      this.epubRendition = rendition;
+      await book.loaded.metadata.catch(function () {});
+      await rendition.display();
+      var titleEl = body.querySelector('#pv-epub-title');
+      function updateTitle(loc) {
+        try {
+          var meta = book.package.metadata;
+          titleEl.textContent = (meta && meta.title ? meta.title + ' · ' : '') + (loc && loc.start ? loc.start.href : '');
+        } catch (_) { titleEl.textContent = ''; }
+      }
+      rendition.on('relocated', updateTitle);
+      updateTitle();
+      body.querySelector('#pv-epub-prev').addEventListener('click', function () { rendition.prev(); });
+      body.querySelector('#pv-epub-next').addEventListener('click', function () { rendition.next(); });
+    },
+
+    async renderZip(body, opts) {
+      var path = opts && opts.path;
+      if (!path) { this.renderUnsupported(body); return; }
+      var res = await this.handleRes(await fetch('/api/files/preview/zip?' + R6T5.qs({ path: path }), { credentials: 'same-origin' }));
+      var data = await res.json();
+      var items = data.items || [];
+      var rows = items.slice(0, 500).map(function (it) {
+        return '<tr><td class="pv-zip-name">' + R6T5.esc(it.name) + '</td>' +
+          '<td class="pv-zip-size">' + (it.isDir ? '—' : R6T5.fmtBytes(it.size)) + '</td>' +
+          '<td class="pv-zip-method faint small">' + (it.isDir ? '' : R6T5.esc(it.method)) + '</td></tr>';
+      }).join('');
+      body.innerHTML = '<div class="pv-ziphead faint small">共 ' + data.count + ' 个条目' +
+        (data.truncated ? '（仅显示前 2000 个）' : '') + ' · 只读清单，不自动解压</div>' +
+        '<div class="pv-zip"><table class="pv-zip-table"><thead><tr><th>名称</th><th>原始大小</th><th>方式</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></div>';
     },
 
     async renderPdf(url, body, opts) {
@@ -495,10 +599,39 @@
       var res = await this.handleRes(await fetch(url, { credentials: 'same-origin' }));
       var data = await res.json();
       var lang = data.language ? '<span class="badge info mt2">' + R6T5.esc(data.language) + '</span>' : '';
-      body.innerHTML = '<div class="pv-text-head">' + lang +
-        (data.sizeBytes != null ? '<span class="faint small"> · ' + R6T5.fmtBytes(data.sizeBytes) + '</span>' : '') + '</div>' +
-        '<pre class="preview-code"><code></code></pre>';
-      body.querySelector('code').textContent = data.content || '';
+      var head = '<div class="pv-text-head">' + lang +
+        (data.sizeBytes != null ? '<span class="faint small"> · ' + R6T5.fmtBytes(data.sizeBytes) + '</span>' : '') + '</div>';
+      body.innerHTML = head + '<div class="pv-code-editor" id="pv-code"></div>' +
+        '<pre class="preview-code hide"><code></code></pre>';
+      var fallback = body.querySelector('pre.preview-code');
+      fallback.querySelector('code').textContent = data.content || '';
+      try {
+        await this.loadScriptOnce('/vendor/monaco/vs/loader.js');
+        await new Promise(function (resolve, reject) {
+          try {
+            window.require.config({ paths: { vs: '/vendor/monaco/vs' } });
+            window.require(['vs/editor/editor.main'], function () { resolve(); }, reject);
+          } catch (e) { reject(e); }
+        });
+        this.monacoEditor = window.monaco.editor.create(body.querySelector('#pv-code'), {
+          value: data.content || '',
+          language: monacoLang(data.language),
+          readOnly: true,
+          domReadOnly: true,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          fontSize: 13,
+          lineNumbers: 'on',
+          renderLineHighlight: 'none',
+          automaticLayout: true,
+          wordWrap: 'on',
+        });
+        body.querySelector('#pv-code').classList.remove('hide');
+        fallback.classList.add('hide');
+      } catch (_) {
+        fallback.classList.remove('hide');
+        body.querySelector('#pv-code').classList.add('hide');
+      }
     },
 
     async renderMarkdown(url, body) {
@@ -522,16 +655,7 @@
     try {
       status = await R6T5.get('/api/setup/status');
     } catch (e) {
-      status = { ready: false, next: 'supabase', hint: '服务端状态获取失败，请稍后重试', link: '/admin/login', linkLabel: '进入管理后台' };
-    }
-    /* 前端自测开关：?mock=setup-supabase 模拟未接通账号中心；生产无参时不受影响 */
-    if (params.get('mock') === 'setup-supabase') {
-      status = {
-        ready: false, next: 'supabase',
-        hint: '请管理员凭管理密码进入设置页配置 Supabase',
-        link: '/admin/login', linkLabel: '进入管理后台',
-        checks: { supabase: false, storage: false, groups: false, site: false }
-      };
+      status = { ready: false, next: 'storage', hint: '服务端状态获取失败，请稍后重试', link: '/admin/login', linkLabel: '进入管理后台' };
     }
     renderSetup(status);
 
@@ -560,12 +684,7 @@
     var linkBtn = document.getElementById('setup-link');
     var ready = s.ready === true || s.next === 'ready';
     note.className = 'note ' + (ready ? 'ok' : 'warn');
-    if (s.userSource === 'volume') {
-      // 数据卷模式：提示条不出现 Supabase 字样；即便 next 异常回落到 supabase 也按 volume 文案渲染
-      noteBody.textContent = '当前由数据卷管理账号，请使用管理员分配的邮箱与密码登录';
-    } else {
-      noteBody.textContent = s.hint || (ready ? '配置完成，可以使用邮箱登录' : '站点尚未配置完成');
-    }
+    noteBody.textContent = s.hint || (ready ? '配置完成，可以使用邮箱登录' : '站点尚未配置完成');
     if (!linkBtn) return;
     if (ready) {
       linkBtn.classList.add('hide');
@@ -593,7 +712,7 @@
       email.disabled = true;
       pass.disabled = true;
       btn.textContent = '站点尚未就绪';
-      if (status.next === 'supabase' && status.link && status.userSource !== 'volume') {
+      if (status.link) {
         adminEntry.href = status.link;
         adminEntry.textContent = status.linkLabel || '进入管理后台';
         adminEntry.classList.remove('hide');
@@ -626,7 +745,6 @@
         switch (err.code) {
           case 'invalid_credentials': msg = '邮箱或密码错误'; break;
           case 'account_banned': msg = (err && err.message) || '账号已被封禁，请联系管理员'; break;
-          case 'supabase_not_configured': msg = '站点尚未接通账号中心，请联系管理员'; break;
           case 'rate_limited': msg = '尝试过于频繁，请稍后再试'; break;
           case 'captcha_failed': msg = (err && err.message) || '人机验证未通过，请重试'; break;
           default: msg = (err && err.message) || '登录失败';
@@ -662,14 +780,6 @@
       note.classList.remove('hide');
     }
 
-    // Supabase 托管账号：不在本站注册，引导回登录页
-    if (cfg && cfg.source === 'supabase') {
-      showNote('info', '当前由 Supabase 管理账号，请用 Supabase 注册');
-      form.classList.add('hide');
-      btn.disabled = true;
-      loginLink.classList.remove('hide');
-      return;
-    }
 
     if (!cfg || cfg.available !== true) {
       var closedMsg = cfg && cfg.reason === 'admin_disabled' ? '管理员未开放注册' : '当前未开放自助注册';

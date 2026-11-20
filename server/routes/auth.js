@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { db, getSetting } from '../db.js';
-import * as supabase from '../services/supabase.js';
 import { upsertUser, publicUser } from '../services/nodes.js';
 import { quotaForUser, trashCount, trashBytes, resolveGroup } from '../services/quota.js';
 import { writeAudit } from '../services/audit.js';
@@ -14,7 +13,7 @@ import { checkEmailAllowed, policySettings } from '../services/signup-policy.js'
 import * as captcha from '../services/captcha.js';
 import * as mailer from '../services/mailer.js';
 import { contactEmail } from '../services/mail-config.js';
-import { getUserSource, isVolumeSource, verifyLocalPassword, hashLocalPassword } from '../services/user-source.js';
+import { verifyLocalPassword, hashLocalPassword } from '../services/user-source.js';
 import { genId, nowIso } from '../lib/format.js';
 import { ENV } from '../config.js';
 
@@ -98,14 +97,13 @@ router.post('/login', async (req, res, next) => {
     if (!email || !password) throw badRequest('invalid_input', '邮箱与密码不能为空', { field: 'email' });
     const normalized = String(email).toLowerCase();
     await requireCaptcha(req, clientIp(req), 'onLogin');
-    const source = getUserSource();
     const key = `${normalized}|${clientIp(req)}`;
     if (loginFails(key) >= 5) {
       const e = new Error('登录尝试过多，请稍后再试');
       e.status = 429; e.code = 'rate_limited'; throw e;
     }
 
-    if (source === 'volume') {
+    {
       // 本地账号体系：未配置 Supabase 也不应 412，直接走本地校验。
       const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalized);
       if (!user) {
@@ -144,43 +142,13 @@ router.post('/login', async (req, res, next) => {
       return;
     }
 
-    // supabase 分支：维持现状
-    if (!supabase.isConfigured()) {
-      const e = new Error('尚未配置 Supabase');
-      e.status = 412; e.code = 'supabase_not_configured'; throw e;
-    }
-    const result = await supabase.passwordLogin(normalized, password);
-    if (result.status !== 200 || !result.body?.access_token) {
-      recordLoginFail(key);
-      const e = new Error('邮箱或密码错误');
-      e.status = 401; e.code = 'invalid_credentials'; throw e;
-    }
-    clearLoginFails(key);
-    const body = result.body;
-    const uid = body.user?.id || body.sub || normalized;
-    const user = upsertUser({
-      id: uid,
-      email: normalized,
-      displayName: body.user?.email || '',
-    });
-    const session = {
-      v: 1,
-      email: normalized,
-      accessToken: body.access_token,
-      refreshToken: body.refresh_token,
-      exp: Date.now() + (body.expires_in || 3600) * 1000,
-      dev: false,
-    };
-    setUserCookie(res, db, session);
-    writeAudit({ email: normalized, action: 'login', ip: clientIp(req) });
-    res.json({ ok: true, user: publicUser(user, resolveGroup(user)), setup: { next: 'ready' } });
   } catch (e) { next(e); }
 });
 
 router.post('/signup', async (req, res, next) => {
   try {
     // ---- volume 模式：本地账号自助注册 ----
-    if (isVolumeSource()) {
+    {
       const { email, password, passwordConfirm } = req.body || {};
       const normalized = String(email || '').toLowerCase();
       const ip = clientIp(req);
@@ -263,49 +231,19 @@ router.post('/signup', async (req, res, next) => {
       return;
     }
 
-    // ---- supabase 模式：保持现有行为（allowSignup 设置 + Supabase /auth/v1/signup）----
-    if (getSetting('allowSignup', 'false') !== 'true') throw forbidden('未开放自助注册');
-    const { email, password } = req.body || {};
-    const normalizedSb = String(email || '').toLowerCase();
-    if (!EMAIL_RE.test(email || '')) throw badRequest('invalid_input', '邮箱格式不正确', { field: 'email' });
-    const policy = checkEmailAllowed(normalizedSb);
-    if (!policy.ok) throw new ApiError(400, policy.code, policy.message);
-    await requireCaptcha(req, clientIp(req), 'onSignup');
-    const c = supabase.getConfig();
-    const result = await fetch(`${c.url}/auth/v1/signup`, {
-      method: 'POST',
-      headers: { apikey: c.anonKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    const text = await result.text();
-    let body = null; try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-    if (result.status !== 200 && result.status !== 201) {
-      const e = new Error('注册失败');
-      e.status = 401; e.code = 'invalid_credentials'; e.details = { body }; throw e;
-    }
-    res.json({ ok: true, pendingConfirm: !body?.confirmed_at });
+    throw forbidden('未开放自助注册');
   } catch (e) { next(e); }
 });
 
 // 注册入口配置：前端据此决定是否展示「注册」入口
 router.get('/signup-config', (req, res, next) => {
   try {
-    if (isVolumeSource()) {
-      const group = pickSignupGroup();
-      res.json({
-        available: !!group,
-        minPasswordLength: 8,
-        source: 'volume',
-        reason: group ? 'ok' : 'closed',
-      });
-      return;
-    }
-    const available = getSetting('allowSignup', 'false') === 'true';
+    const group = pickSignupGroup();
     res.json({
-      available,
+      available: !!group,
       minPasswordLength: 8,
-      source: 'supabase',
-      reason: available ? 'ok' : 'admin_disabled',
+      source: 'volume',
+      reason: group ? 'ok' : 'closed',
     });
   } catch (e) { next(e); }
 });

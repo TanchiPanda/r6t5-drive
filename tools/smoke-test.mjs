@@ -43,10 +43,10 @@ function check(name, cond, detail) {
   console.log(`${cond ? 'PASS' : 'FAIL'} | ${name} | ${detail}`);
 }
 
-// 1. 全新 DB setup.status → supabase
+// 1. 全新 DB setup.status → storage（账号固定数据卷，不再有 Supabase 步骤）
 {
   const r = await req('GET', '/api/setup/status');
-  check('1. setup.status 初始 next=supabase', r.json?.next === 'supabase',
+  check('1. setup.status 初始 next=storage', r.json?.next === 'storage',
     `status=${r.status} next=${r.json?.next} hint=${r.json?.hint}`);
 }
 
@@ -61,39 +61,10 @@ function check(name, cond, detail) {
     `status=${ok.status} cookie=${jar.admin ? 'yes' : 'no'}`);
 }
 
-// 3. 错误 Supabase 配置 → 400 不落盘
-{
-  const r = await req('POST', '/api/admin/supabase', {
-    cookie: jar.admin,
-    body: { url: 'https://nope.supabase.co', anonKey: 'x', serviceKey: 'y' },
-  });
-  check('3a. 坏配置 400 supabase_unreachable', r.status === 400 && r.json?.error?.code === 'supabase_unreachable',
-    `status=${r.status} code=${r.json?.error?.code} reason=${r.json?.error?.details?.reason}`);
-  const g = await req('GET', '/api/admin/supabase', { cookie: jar.admin });
-  check('3b. 旧配置保持 configured:false（无脏数据）', g.json?.configured === false,
-    `status=${g.status} configured=${g.json?.configured}`);
-}
+// 3. （Supabase 托管模式已下线，本段移除）
 
-// 4. 状态机推进：先在 DB 直接标记 supabase 已自检通过（自测绕过真实实例），再建策略/组/站点
+// 4. 状态机推进：建策略/组/站点
 {
-  // 直接写 SQLite 模拟已通过自检（仅自测用途）
-  const Database = (await import('better-sqlite3')).default;
-  const path = await import('node:path');
-  const dbPath = process.env.DB_PATH || path.resolve(process.cwd(), 'data/r6t5.db');
-  const db = new Database(dbPath);
-  const now = new Date().toISOString();
-  db.prepare(`INSERT INTO settings (key,value) VALUES ('supabase_url','https://fake.supabase.co')
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run();
-  db.prepare(`INSERT INTO settings (key,value) VALUES ('supabase_anon_key','fake-anon')
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run();
-  db.prepare(`INSERT INTO settings (key,value) VALUES ('supabase_service_key','fake-service')
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run();
-  db.prepare(`INSERT INTO settings (key,value) VALUES ('supabase_last_check','{"ok":true,"at":"${now}","latencyMs":1}')
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run();
-  db.prepare(`INSERT INTO settings (key,value) VALUES ('supabase_checked_at','${now}')
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run();
-  db.close();
-
   // 先建一条 volume 策略（storage 检查）
   const st = await req('POST', '/api/admin/storage', {
     cookie: jar.admin,
@@ -371,16 +342,7 @@ function check(name, cond, detail) {
   const P6_EMAIL = 'p6smoke@x.com';
   const P6_PW = 'p6pass123';
 
-  // 56a. 切到 volume；setup/status 跳过 supabase 检查
-  const sw = await req('PUT', '/api/admin/user-source', {
-    cookie: jar.admin, body: { source: 'volume', confirm: true },
-  });
-  check('56a1. 切到 volume 200 ok:true', sw.status === 200 && sw.json?.ok === true && sw.json?.switchedTo === 'volume',
-    `status=${sw.status} body=${JSON.stringify(sw.json)}`);
-  const stAfter = await req('GET', '/api/setup/status');
-  check('56a2. volume 模式 next 不再是 supabase，userSource=volume',
-    stAfter.status === 200 && stAfter.json?.next !== 'supabase' && stAfter.json?.userSource === 'volume',
-    `next=${stAfter.json?.next} userSource=${stAfter.json?.userSource}`);
+  // 56a. 账号固定为数据卷，无需切换
 
   // 56b. 建本地账号 → 本地登录 200 → /api/me 200
   const created = await req('POST', '/api/admin/users', {
@@ -448,16 +410,7 @@ function check(name, cond, detail) {
   check('56g2. 删号后既有 cookie /api/me 401/403（不 500）',
     [401, 403].includes(meDeleted.status), `status=${meDeleted.status} code=${meDeleted.json?.error?.code}`);
 
-  // 56h. 收尾切回 supabase，断言来源复位（保证脚本可重复跑、不影响前面用例）
-  const swBack = await req('PUT', '/api/admin/user-source', {
-    cookie: jar.admin, body: { source: 'supabase', confirm: true },
-  });
-  check('56h1. 切回 supabase 200', swBack.status === 200 && swBack.json?.switchedTo === 'supabase',
-    `status=${swBack.status} body=${JSON.stringify(swBack.json)}`);
-  const srcBack = await req('GET', '/api/admin/user-source', { cookie: jar.admin });
-  check('56h2. GET /api/admin/user-source 回到 supabase',
-    srcBack.status === 200 && srcBack.json?.userSource === 'supabase',
-    `status=${srcBack.status} userSource=${srcBack.json?.userSource}`);
+  // 56h. 账号固定为数据卷，无收尾切换
 }
 
 // ================= P7：自助注册 / sudo / 空间单位 / 版本发布（独立段落，收尾切回 supabase） =================
@@ -469,12 +422,7 @@ function check(name, cond, detail) {
   const P7_EMAIL = `p7smoke+${suffix}@x.com`;
   const P7_PW = 'p7pass123';
 
-  // 57a. 切到 volume
-  const sw = await req('PUT', '/api/admin/user-source', {
-    cookie: jar.admin, body: { source: 'volume', confirm: true },
-  });
-  check('57a1. 切到 volume 200 ok:true', sw.status === 200 && sw.json?.ok === true && sw.json?.switchedTo === 'volume',
-    `status=${sw.status} body=${JSON.stringify(sw.json)}`);
+  // 57a. 账号固定为数据卷，无需切换
 
   // 57b. 建一个 allowSelfSignup:true 的组
   const grp = await req('POST', '/api/admin/groups', {
@@ -592,16 +540,8 @@ function check(name, cond, detail) {
   check('57l. update-status 200 非 5xx，current.version 非空字符串', updOk,
     `checked=${updChecked} reason=${updReason} version=${updVersion} hasUpdate=${upd.json?.hasUpdate} upgradeCommand=${upd.json?.latest?.upgradeCommand || ''}`);
 
-  // 57m. 收尾切回 supabase，断言来源复位（保证脚本可重复跑）
-  const swBack = await req('PUT', '/api/admin/user-source', {
-    cookie: jar.admin, body: { source: 'supabase', confirm: true },
-  });
-  check('57m1. 切回 supabase 200', swBack.status === 200 && swBack.json?.switchedTo === 'supabase',
-    `status=${swBack.status} body=${JSON.stringify(swBack.json)}`);
-  const srcBack = await req('GET', '/api/admin/user-source', { cookie: jar.admin });
-  check('57m2. GET /api/admin/user-source 回到 supabase',
-    srcBack.status === 200 && srcBack.json?.userSource === 'supabase',
-    `status=${srcBack.status} userSource=${srcBack.json?.userSource}`);
+  // 57m. 账号固定为数据卷，无收尾切换
+
 }
 
 const failed = results.filter((r) => !r.ok);

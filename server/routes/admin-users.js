@@ -1,14 +1,11 @@
 import { Router } from 'express';
 import { db } from '../db.js';
-import * as supabase from '../services/supabase.js';
 import { upsertUser, usedBytesOf, fileCountOf } from '../services/user-helpers.js';
 import { writeAudit } from '../services/audit.js';
 import { badRequest, notFound, conflict, notSupportedInSource, ApiError } from '../lib/errors.js';
 import { checkEmailAllowed } from '../services/signup-policy.js';
 import { nowIso, genId } from '../lib/format.js';
-import {
-  isVolumeSource, hashLocalPassword,
-} from '../services/user-source.js';
+import { hashLocalPassword } from '../services/user-source.js';
 import * as registry from '../services/storage/registry.js';
 import { getDriver } from '../services/storage/driver.js';
 import { resolveStorage } from '../services/bindings.js';
@@ -43,7 +40,7 @@ function serialize(u) {
     disabled: status === 'banned',
     status,
     confirmRequired,
-    source: u.passwordHash ? 'local' : 'supabase',
+    source: 'local',
     registeredAt: u.registeredAt || u.createdAt || null,
     createdAt: u.createdAt,
     lastLoginAt: u.lastLoginAt || null,
@@ -95,8 +92,8 @@ router.post('/', async (req, res, next) => {
     const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalized);
     if (existing) throw conflict('该邮箱已存在', { field: 'email' });
 
-    if (isVolumeSource()) {
-      // volume 模式：本地建号，密码 scrypt 落库。
+    {
+      // 本地数据卷建号，密码 scrypt 落库。
       const uid = genId('u');
       const now = nowIso();
       const passwordHash = hashLocalPassword(String(body.password));
@@ -110,20 +107,6 @@ router.post('/', async (req, res, next) => {
       return;
     }
 
-    // supabase 模式：维持现有 Supabase 建号逻辑（不假装本地建号）。
-    if (!supabase.isConfigured()) {
-      const e = new Error('尚未配置 Supabase');
-      e.status = 412; e.code = 'supabase_not_configured'; throw e;
-    }
-    const created = await supabase.adminCreateUser(normalized, String(body.password));
-    if (created.status !== 200 && created.status !== 201) {
-      const e = new Error('在 Supabase 创建用户失败');
-      e.status = 400; e.code = 'invalid_input'; e.details = { body: created.body }; throw e;
-    }
-    const uid = created.body?.id || created.body?.user?.id || normalized;
-    const user = upsertUser({ id: uid, email: normalized, groupId, displayName });
-    writeAudit({ email: normalized, action: 'user_create', detail: 'supabase' });
-    res.status(201).json({ item: serialize(user) });
   } catch (e) { next(e); }
 });
 
@@ -134,10 +117,6 @@ router.post('/:id/password', (req, res, next) => {
     const { password } = req.body || {};
     if (!password || String(password).length < 6) {
       throw badRequest('invalid_input', '密码至少 6 位', { field: 'password' });
-    }
-    // Supabase 来源：密码需在 Supabase 侧修改（与该用户是否带本地 hash 无关）。
-    if (!isVolumeSource()) {
-      throw notSupportedInSource('Supabase 账号密码请在 Supabase 侧修改', { source: 'supabase' });
     }
     const passwordHash = hashLocalPassword(String(password));
     db.prepare('UPDATE users SET passwordHash = ? WHERE id = ?').run(passwordHash, u.id);
@@ -201,36 +180,6 @@ router.patch('/:id', (req, res, next) => {
     }
 
     res.json({ item: serialize(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)) });
-  } catch (e) { next(e); }
-});
-
-router.post('/sync', async (req, res, next) => {
-  try {
-    if (!supabase.isConfigured()) {
-      const e = new Error('尚未配置 Supabase');
-      e.status = 412; e.code = 'supabase_not_configured'; throw e;
-    }
-    const result = await supabase.adminListUsers();
-    if (result.status !== 200) throw conflict('拉取 Supabase 用户失败', { body: result.body });
-    const list = result.body?.users || result.body || [];
-    let added = 0, updated = 0;
-    const tx = db.transaction(() => {
-      for (const su of list) {
-        const email = String(su.email || '').toLowerCase();
-        if (!email) continue;
-        const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-        if (existing) {
-          updated++;
-          db.prepare('UPDATE users SET displayName = ? WHERE email = ?').run(su.email || '', email);
-        } else {
-          added++;
-          upsertUser({ id: su.id || email, email });
-        }
-      }
-    });
-    tx();
-    const total = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
-    res.json({ ok: true, added, updated, total });
   } catch (e) { next(e); }
 });
 
@@ -299,23 +248,9 @@ router.delete('/:id', (req, res, next) => {
     // 删账号 = 删除 users 行（本地账号彻底消失）。
     db.prepare('DELETE FROM users WHERE id = ?').run(u.id);
 
-    // Supabase 账号（无 passwordHash）只删本地记录，远端用户保留。
-    const supabaseUserKept = !isLocal;
-    writeAudit({
-      email,
-      action: 'user_delete',
-      detail: `files:${deleteFiles ? 'deleted' : 'kept'}${supabaseUserKept ? ',supabase:kept' : ''}`,
-    });
+    writeAudit({ email, action: 'user_delete', detail: `files:${deleteFiles ? 'deleted' : 'kept'}` });
 
-    res.json({
-      ok: true,
-      email,
-      supabaseUserKept,
-      message: supabaseUserKept
-        ? 'Supabase 中的用户未被删除，仅清除了本地记录'
-        : '账号已删除',
-      deletedFiles,
-    });
+    res.json({ ok: true, email, message: '账号已删除', deletedFiles });
   } catch (e) { next(e); }
 });
 

@@ -7,6 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { getDriver } from './storage/driver.js';
 import { extOfPath, OFFICE_EXT, OFFICE_MIME } from './preview-config.js';
+import { ZipReader } from '../lib/zip.js';
 import { renderMarkdown, assertSafeHtml } from '../lib/markdown.js';
 import {
   notFound, previewUnsupported, previewTooLarge, storageError, badRequest, ApiError,
@@ -37,6 +38,19 @@ const VIDEO_MIME = {
 
 const PDF_MIME = 'application/pdf';
 
+const AUDIO_MIME = {
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  flac: 'audio/flac',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  opus: 'audio/opus',
+};
+
+const EPUB_MIME = 'application/epub+zip';
+const ZIP_MIME = 'application/zip';
+
 // 文本 / 代码：扩展名 → 代码语言标识（供前端高亮；content 原样返回，转义由前端做）
 const TEXT_LANG = {
   txt: 'plaintext', md: 'markdown', log: 'plaintext',
@@ -63,6 +77,9 @@ export function classify(logicalPath, mime) {
   if (ext === 'svg') return { kind: 'svg', ext, mime: 'image/svg+xml', language: null };
   if (VIDEO_MIME[ext]) return { kind: 'video', ext, mime: VIDEO_MIME[ext], language: null };
   if (ext === 'pdf') return { kind: 'pdf', ext, mime: PDF_MIME, language: null };
+  if (AUDIO_MIME[ext]) return { kind: 'audio', ext, mime: AUDIO_MIME[ext], language: null };
+  if (ext === 'epub') return { kind: 'epub', ext, mime: EPUB_MIME, language: null };
+  if (ext === 'zip') return { kind: 'zip', ext, mime: ZIP_MIME, language: null };
   if (ext === 'md') return { kind: 'markdown', ext, mime: 'text/markdown', language: 'markdown' };
   if (TEXT_LANG[ext]) return { kind: 'text', ext, mime: 'text/plain; charset=utf-8', language: TEXT_LANG[ext] };
   // 兜底：MIME 明确是 PDF / 图片 / 文本时按 MIME 归类
@@ -78,7 +95,7 @@ export function classify(logicalPath, mime) {
 
 /** 预览是否可被 sendPreview 直出（svg / unsupported 不可）。meta 接口据此给 reason。 */
 export function previewable(classification) {
-  return ['image', 'video', 'pdf', 'text', 'markdown'].includes(classification.kind);
+  return ['image', 'video', 'audio', 'pdf', 'epub', 'zip', 'text', 'markdown'].includes(classification.kind);
 }
 
 /** 不可预览时的中文说明（供 /meta 使用）。 */
@@ -166,6 +183,46 @@ async function readWhole(strategy, logicalPath, { softLimit, node } = {}) {
     chunks.push(chunk);
   }
   return Buffer.concat(chunks, total);
+}
+
+/**
+ * ZIP 条目清单（只读，不解压、不落盘到用户目录）。
+ * volume 直接按物理文件解析；远端策略按 ≤100MB 上限落临时文件后解析。
+ */
+export async function listZipEntries({ strategy, logicalPath, node }) {
+  const total = await probeSize(strategy, logicalPath, node);
+  if (total != null && total > BINARY_PREVIEW_LIMIT) {
+    throw previewTooLarge({ limitBytes: BINARY_PREVIEW_LIMIT, sizeBytes: total });
+  }
+  let filePath = null;
+  let cleanup = null;
+  if (strategy.type === 'volume') {
+    filePath = volumePhysicalPath(strategy, logicalPath);
+  } else {
+    const tmp = await materializeRemote(strategy, logicalPath, node);
+    filePath = tmp.tmpFile;
+    cleanup = tmp.cleanup;
+  }
+  const reader = ZipReader.open(filePath);
+  try {
+    const entries = reader.readEntries();
+    const limit = 2000;
+    const items = entries.slice(0, limit).map((e) => ({
+      name: e.name,
+      isDir: e.isDir,
+      size: e.uncompSize,
+      compressedSize: e.compSize,
+      method: e.method === 8 ? 'deflate' : e.method === 0 ? 'store' : 'other',
+    }));
+    return {
+      count: entries.length,
+      truncated: entries.length > limit,
+      items,
+    };
+  } finally {
+    reader.close();
+    if (cleanup) cleanup();
+  }
 }
 
 // ---- Range 解析 ----
@@ -294,7 +351,7 @@ async function sendBinary({ res, strategy, logicalPath, node, classification, re
     throw previewTooLarge({ limitBytes: BINARY_PREVIEW_LIMIT, sizeBytes: total });
   }
 
-  const wantRange = classification.kind === 'video' && rangeHeader;
+  const wantRange = (classification.kind === 'video' || classification.kind === 'audio') && rangeHeader;
 
   // ---- volume：本地 fs 流，天然支持 start/end ----
   if (strategy.type === 'volume') {
@@ -472,7 +529,9 @@ export async function sendPreview({ req, res, strategy, logicalPath, node }) {
       return;
     }
     case 'video':
+    case 'audio':
     case 'pdf':
+    case 'epub':
       await sendBinary({ res, strategy, logicalPath, node, classification, req, rangeHeader });
       return;
     case 'text':

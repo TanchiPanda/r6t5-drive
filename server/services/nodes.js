@@ -118,7 +118,7 @@ export function publicUser(user, group) {
     isAdmin: false,
     disabled: status === 'banned',
     status,
-    source: user.passwordHash ? 'local' : 'supabase',
+    source: 'local',
     registeredAt: user.registeredAt || user.createdAt || null,
     lastLoginAt: user.lastLoginAt || null,
   };

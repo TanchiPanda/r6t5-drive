@@ -9,19 +9,19 @@ import { getSetting, setSetting } from '../db.js';
  * 其它模块只通过本文件读写，不要在路由/服务里散写 SQL。
  */
 
-export const SOURCES = ['supabase', 'volume'];
-export const DEFAULT_SOURCE = 'supabase';
+// 2026-11：Supabase 托管账号模式已下线，账号体系固定为数据卷本地账号。
+export const SOURCES = ['volume'];
+export const DEFAULT_SOURCE = 'volume';
 export const SOURCE_SETTING_KEY = 'userSource';
 export const SOURCE_CHANGED_AT_KEY = 'userSourceChangedAt';
 
 export function getUserSource() {
-  const raw = getSetting(SOURCE_SETTING_KEY, DEFAULT_SOURCE);
-  return SOURCES.includes(raw) ? raw : DEFAULT_SOURCE;
+  return 'volume';
 }
 
 export function setUserSource(src) {
-  if (!SOURCES.includes(src)) throw new Error(`非法账号来源：${String(src)}`);
-  setSetting(SOURCE_SETTING_KEY, src);
+  if (src !== 'volume') throw new Error('Supabase 托管账号模式已下线，仅支持数据卷账号');
+  setSetting(SOURCE_SETTING_KEY, 'volume');
 }
 
 export function isVolumeSource() {
