@@ -1,49 +1,50 @@
 /* R6T5 Drive · 设计令牌（唯一颜色/排版来源，所有页面只允许引用这里的变量）
-   浅色为默认，深色通过 <html data-theme="dark"> 切换。 */
+   浅色为默认，深色通过 <html data-theme="dark"> 切换。
+   视觉方向：中性冷灰画布 + 白色表面 + 蓝色主色，扁平、发丝线边框、克制阴影。 */
 
 :root{
   /* 底色层 */
-  --bg:#f5f8f5;
-  --bg-soft:#edf3ee;
+  --bg:#f3f5f8;
+  --bg-soft:#ebeff3;
   --panel:#ffffff;
-  --panel-2:#f3f8f4;
-  --panel-3:#e6efe9;
-  --line:rgba(18,42,31,.10);
-  --line-strong:rgba(18,42,31,.20);
-  --mask:rgba(4,10,7,.56);
+  --panel-2:#f6f8fa;
+  --panel-3:#e9edf2;
+  --line:rgba(19,35,54,.09);
+  --line-strong:rgba(19,35,54,.18);
+  --mask:rgba(9,17,27,.52);
 
   /* 文字 */
-  --fg:#17231d;
-  --fg-dim:#36493f;
-  --muted:#5f7268;
-  --faint:#7d9086;
+  --fg:#1d2734;
+  --fg-dim:#3d4c5e;
+  --muted:#5f7083;
+  --faint:#8b99a9;
 
-  /* 主色 / 强调 */
-  --acc:#2f8f61;
+  /* 主色 / 强调（蓝色系，自定调色，非照搬他站色值） */
+  --acc:#2466d6;
   --acc-ink:#ffffff;
   --acc-2:#b8860b;
-  --acc-grad:linear-gradient(135deg,#2d875c,#3da472);
-  --acc-surface:color-mix(in srgb,var(--acc) 10%,transparent);
+  --acc-grad:none;
+  --acc-surface:color-mix(in srgb,var(--acc) 9%,transparent);
 
   /* 语义色 */
-  --ok:#26895d;
-  --warn:#a96f16;
-  --danger:#bd424c;
-  --danger-soft:rgba(189,66,76,.10);
+  --ok:#1f9a68;
+  --warn:#b26a12;
+  --danger:#cf4b57;
+  --danger-soft:rgba(207,75,87,.10);
   --info:#2f74ad;
-  --warn-soft:rgba(169,111,22,.12);
-  --ok-soft:rgba(38,137,93,.10);
+  --warn-soft:rgba(178,106,18,.12);
+  --ok-soft:rgba(31,154,104,.10);
   --info-soft:rgba(47,116,173,.10);
 
   /* 阴影与圆角 */
-  --sh-1:0 1px 2px rgba(18,42,31,.07);
-  --sh-2:0 10px 28px -16px rgba(18,42,31,.28);
-  --sh-3:0 24px 52px -24px rgba(18,42,31,.34);
+  --sh-1:0 1px 2px rgba(19,35,54,.06);
+  --sh-2:0 10px 28px -14px rgba(19,35,54,.22);
+  --sh-3:0 24px 52px -22px rgba(9,17,27,.34);
   --r-xs:6px;
-  --r-sm:10px;
-  --r-md:13px;
-  --r-lg:18px;
-  --r-xl:24px;
+  --r-sm:8px;
+  --r-md:10px;
+  --r-lg:14px;
+  --r-xl:20px;
   --r-pill:999px;
 
   /* 间距刻度 */
@@ -63,40 +64,40 @@
 
   /* 布局尺寸 */
   --sidebar-w:248px;
-  --topbar-h:62px;
+  --topbar-h:60px;
   --page-max:1240px;
 
   color-scheme:light;
 }
 
 html[data-theme="dark"]{
-  --bg:#0c120f;
-  --bg-soft:#101815;
-  --panel:#15201b;
-  --panel-2:#1b2822;
-  --panel-3:#23332b;
+  --bg:#14191f;
+  --bg-soft:#191f26;
+  --panel:#1d232b;
+  --panel-2:#232a33;
+  --panel-3:#2b333e;
   --line:rgba(255,255,255,.08);
   --line-strong:rgba(255,255,255,.16);
 
-  --fg:#e8f1ec;
-  --fg-dim:#c5d5cd;
-  --muted:#98aca2;
-  --faint:#71867d;
+  --fg:#e9eef3;
+  --fg-dim:#c4cfda;
+  --muted:#97a6b5;
+  --faint:#6f7e8c;
 
-  --acc:#55b97e;
-  --acc-ink:#dcf5e6;
+  --acc:#5f9df2;
+  --acc-ink:#ffffff;
   --acc-2:#ffd54f;
-  --acc-grad:linear-gradient(135deg,#439a68,#5fc789);
-  --acc-surface:color-mix(in srgb,var(--acc) 12%,transparent);
+  --acc-grad:none;
+  --acc-surface:color-mix(in srgb,var(--acc) 14%,transparent);
 
-  --ok:#7ed6a5;
-  --warn:#f0b45e;
-  --danger:#e06c75;
-  --danger-soft:rgba(224,108,117,.12);
-  --info:#6ba8e0;
-  --warn-soft:rgba(240,180,94,.13);
-  --ok-soft:rgba(126,214,165,.12);
-  --info-soft:rgba(107,168,224,.12);
+  --ok:#63c79a;
+  --warn:#e6a85c;
+  --danger:#e27480;
+  --danger-soft:rgba(226,116,128,.13);
+  --info:#74aede;
+  --warn-soft:rgba(230,168,92,.13);
+  --ok-soft:rgba(99,199,154,.13);
+  --info-soft:rgba(116,174,222,.13);
 
   --sh-1:0 1px 2px rgba(0,0,0,.24);
   --sh-2:0 12px 32px -14px rgba(0,0,0,.58);
@@ -116,9 +117,9 @@ html[data-theme="dark"]{
   --st-info:var(--info);
   --st-info-bg:var(--info-soft);
   --st-idle:var(--faint);
-  --st-idle-bg:rgba(95,114,104,.10);
+  --st-idle-bg:rgba(95,112,131,.10);
 }
 
 html[data-theme="dark"]{
-  --st-idle-bg:rgba(147,168,158,.10);
+  --st-idle-bg:rgba(151,166,181,.12);
 }

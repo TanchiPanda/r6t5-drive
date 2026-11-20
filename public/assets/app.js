@@ -416,7 +416,7 @@
             fullscreenWeb: true,
             hotkey: true,
             mini: true,
-            theme: '#63C08B',
+            theme: '#2466d6',
             lang: 'zh-cn',
           });
           return;
