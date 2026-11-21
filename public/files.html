@@ -266,6 +266,28 @@
   </div>
 </div>
 
+<!-- 打开方式选择弹层 -->
+<div class="modal-mask" id="m-opener-pick">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h3>打开方式</h3>
+      <div class="spacer"></div>
+      <button class="btn icon ghost" id="op-pick-close" type="button" title="关闭"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-close"></use></svg></button>
+    </div>
+    <div class="modal-body">
+      <p class="d faint small" id="op-pick-file"></p>
+      <div id="op-pick-empty" class="note warn hide">该应用无匹配的应用关联，请点击“展开全部方式”，选择打开方式，如果没有兼容的方式，请下载文件，在本地打开。</div>
+      <div id="op-pick-list" class="op-pick-list"></div>
+      <button class="btn sm ghost block mt2" id="op-pick-expand" type="button">展开全部方式</button>
+    </div>
+    <div class="modal-foot">
+      <a class="btn ghost left" id="op-pick-download" href="#" target="_blank" rel="noopener">下载文件</a>
+      <button class="btn ghost" id="op-pick-once" type="button" disabled>仅一次</button>
+      <button class="btn primary" id="op-pick-always" type="button" disabled>始终</button>
+    </div>
+  </div>
+</div>
+
 <!-- 我的分享抽屉 -->
 <div class="drawer-mask" id="ms-mask"></div>
 <aside class="drawer" id="my-shares-drawer" aria-label="我的分享">

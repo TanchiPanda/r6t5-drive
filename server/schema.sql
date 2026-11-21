@@ -344,3 +344,24 @@ CREATE TABLE IF NOT EXISTS share_purchases (
 );
 
 CREATE INDEX IF NOT EXISTS idx_purchases_lookup ON share_purchases(email, shareToken);
+
+-- ============ 打开方式关联表（P：管理员维护阅读器 ↔ 扩展名绑定，用户在打开时自选） ============
+-- kind：内置渲染类型 image|video|audio|text|markdown|epub|pdfjs|native-pdf|zip|gdocs|m365|onlyoffice|external
+-- extList：逗号分隔小写扩展名；platform：all|pc|mobile（本期仅 all）
+-- urlTemplate：external 专用，{src} 占位替换为签发的公网短期 URL
+-- builtin=1 的行不可删除、kind 不可改；onlyoffice 行由配置决定是否可用
+CREATE TABLE IF NOT EXISTS openers (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  extList     TEXT NOT NULL DEFAULT '',
+  platform    TEXT NOT NULL DEFAULT 'all',
+  urlTemplate TEXT,
+  builtin     INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  sort        INTEGER NOT NULL DEFAULT 0,
+  createdAt   TEXT NOT NULL,
+  updatedAt   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_openers_enabled ON openers(enabled, sort);

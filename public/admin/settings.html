@@ -283,22 +283,6 @@
                   <input class="input" id="f-trashRetentionDays" name="trashRetentionDays" type="number" min="1" step="1">
                 </div>
                 <div class="field">
-                  <label for="f-previewOffice">Office 在线打开</label>
-                  <select class="select" id="f-previewOffice" name="previewOffice">
-                    <option value="none">关闭（仅下载）</option>
-                    <option value="gdocs">Google Docs Viewer</option>
-                    <option value="m365">Microsoft 365（Office for the web）</option>
-                  </select>
-                  <p class="hint">外部服务需要公网可访问的「对外地址」；文件链接有效期 10 分钟，默认关闭。</p>
-                </div>
-                <div class="field">
-                  <label for="f-previewPdf">PDF 打开方式</label>
-                  <select class="select" id="f-previewPdf" name="previewPdf">
-                    <option value="pdfjs">内置 PDF.js（推荐）</option>
-                    <option value="native">浏览器内置阅读器</option>
-                  </select>
-                </div>
-                <div class="field">
                   <label>注册策略</label>
                   <label class="check"><input type="checkbox" id="f-allowSignup" name="allowSignup"><span>允许访客自助注册</span></label>
                 </div>
@@ -307,6 +291,20 @@
                 <button class="btn primary" type="submit">保存设置</button>
               </div>
             </form>
+          </div>
+
+          <div class="card" style="max-width:960px">
+            <div class="page-head">
+              <div><h2>打开方式关联</h2><p class="sub">阅读器与扩展名的绑定；用户打开文件时在「打开方式」弹窗里自选，「始终」按扩展名记在本机浏览器</p></div>
+              <div class="actions"><button class="btn primary" id="opener-add-btn" type="button">新增打开方式</button></div>
+            </div>
+            <div class="table-wrap">
+              <table class="table" id="opener-table">
+                <thead><tr><th>名称</th><th>类型</th><th>扩展名列表</th><th>平台</th><th>状态</th><th></th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="help mt2">内置条目不可删除、类型不可改；OnlyOffice 仅在配置 OO_DS_URL 与 OO_JWT_SECRET 后对用户可见。自定义外部阅读器需填写含 <code>{src}</code> 占位的 URL 模板。</p>
           </div>
 
           <div class="card update-card" style="max-width:720px">
@@ -361,6 +359,52 @@
     </div>
   </div>
 </div>
+<div class="modal-mask" id="m-opener">
+  <div class="modal">
+    <div class="modal-head"><h3 id="opener-title">新增打开方式</h3><div class="spacer"></div><button class="btn icon ghost" data-close type="button"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-close"></use></svg></button></div>
+    <form id="opener-form" novalidate>
+      <div class="modal-body">
+        <div class="field">
+          <label for="op-name">名称</label>
+          <input class="input" id="op-name" type="text" maxlength="40" placeholder="例如：自定义在线阅读器">
+        </div>
+        <div class="field">
+          <label for="op-kind">类型</label>
+          <select class="select" id="op-kind"></select>
+          <p class="hint" id="op-kind-hint"></p>
+        </div>
+        <div class="field">
+          <label for="op-exts">扩展名列表</label>
+          <input class="input" id="op-exts" type="text" placeholder="逗号分隔，例如：doc,docx,xlsx">
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="op-platform">平台</label>
+            <select class="select" id="op-platform">
+              <option value="all">全平台</option>
+              <option value="pc">PC端</option>
+              <option value="mobile">移动端</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="check mt4"><input type="checkbox" id="op-enabled" checked><span>启用</span></label>
+          </div>
+        </div>
+        <div class="field" id="op-template-wrap">
+          <label for="op-template">URL 模板</label>
+          <input class="input mono-sm" id="op-template" type="text" placeholder="https://example.com/view?url={src}">
+          <p class="hint">{src} 会替换为签发的公网短期文件 URL</p>
+        </div>
+        <div class="login-err" id="opener-err"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" type="button" data-close>取消</button>
+        <button class="btn primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="toasts"></div>
 <script src="/assets/api.js"></script>
 <script src="/assets/admin.js"></script>

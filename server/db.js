@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { ENV } from './config.js';
+import { seedOpeners } from './services/openers.js';
 
 const db = new Database(ENV.DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -116,6 +117,9 @@ export function migrate() {
     const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(k);
     if (!row) setSetting(k, v);
   }
+
+  // 打开方式关联表：首次启动播种内置条目（表为空才写，不覆盖管理员改动）
+  seedOpeners();
 }
 
 export function getSetting(key, fallback = null) {

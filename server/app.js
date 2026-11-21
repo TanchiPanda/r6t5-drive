@@ -42,6 +42,8 @@ import authConfirmRouter from './routes/auth-confirm.js';
 import authOauthRouter from './routes/auth-oauth.js';
 import oauthAppRouter from './routes/oauth-app.js';
 import adminOauthClientsRouter from './routes/admin-oauth-clients.js';
+import adminOpenersRouter from './routes/admin-openers.js';
+import openersRouter from './routes/openers.js';
 import { brandingApiRouter, brandingAssetRouter, manifestHandler } from './routes/branding-public.js';
 import storeRouter from './routes/store.js';
 import adminStoreRouter from './routes/admin-store.js';
@@ -95,6 +97,7 @@ app.use('/api/share', sharePublicRouter);
 // P9-C 商店 / 积分 / 公开订单查询
 app.use('/api/store', requireUser, storeRouter);
 app.use('/api/orders', ordersPublicRouter);
+app.use('/api/openers', requireUser, openersRouter);
 
 // ---- 管理员认证（登录/登出/会话本身不套 admin 守卫）----
 app.use('/api/admin', adminAuthRouter);
@@ -120,6 +123,7 @@ adminApi.use('/security', adminSecurityRouter);
 adminApi.use('/store', adminStoreRouter);
 adminApi.use('/points', adminPointsRouter);
 adminApi.use('/oauth-clients', adminOauthClientsRouter);
+adminApi.use('/openers', adminOpenersRouter);
 app.use('/api/admin', adminApi);
 
 // 品牌外观：公开配置（登录页免登录读取）与品牌静态文件 / manifest

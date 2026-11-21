@@ -64,15 +64,16 @@ router.get('/meta', async (req, res, next) => {
     let kind = classification.kind;
     let reason = ok ? '' : unsupportedReason(classification);
     if (isOffice) {
-      // Office 文档统一交给外部在线渲染（Google Docs / Microsoft 365），未启用则明确提示
+      // Office 文档由前端「打开方式」按关联表选择外部阅读器（gdocs / m365 / onlyoffice），
+      // 后端不再按管理员开关放行或拦截；无匹配时前端弹窗给展开全部 / 下载提示。
       kind = 'office';
-      ok = cfg.office !== 'none';
-      reason = ok ? '' : '站点未启用 Office 在线打开方式，可在「设置 → 预览」选择 Google Docs 或 Microsoft 365';
+      ok = true;
+      reason = '';
     }
 
     res.json({
       kind,
-      openWith: kind === 'office' ? cfg.office : (kind === 'pdf' ? cfg.pdf : undefined),
+      ext,
       pdfMode: kind === 'pdf' ? cfg.pdf : undefined,
       name,
       sizeBytes,

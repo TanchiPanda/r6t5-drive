@@ -316,7 +316,8 @@
       this.body.innerHTML = '<div class="skel" style="height:180px"></div>';
       this.mask.classList.add('open');
       document.body.style.overflow = 'hidden';
-      this.render(opts.url, opts.kind, opts.name, opts);
+      if (opts.opener) this.renderOpener(opts.opener, opts);
+      else this.render(opts.url, opts.kind, opts.name, opts);
     },
 
     close() {
@@ -354,7 +355,7 @@
         else if (kind === 'epub') await this.renderEpub(url, body);
         else if (kind === 'zip') await this.renderZip(body, opts || {});
         else if (kind === 'pdf') await this.renderPdf(url, body, opts || {});
-        else if (kind === 'office') await this.renderOffice(body, opts || {});
+        else if (kind === 'office') this.renderUnsupported(body, name);
         else if (kind === 'markdown') await this.renderMarkdown(url, body);
         else if (kind === 'text') await this.renderText(url, body);
         else this.renderUnsupported(body, name);
@@ -585,28 +586,79 @@
       await draw();
     },
 
-    async renderOffice(body, opts) {
+    /* 按「打开方式」条目渲染：内置组件走现有渲染器，外部阅读器走签发 URL */
+    async renderOpener(opener, opts) {
+      var body = this.body;
+      try {
+        switch (opener.kind) {
+          case 'image': await this.renderImage(opts.url, body); break;
+          case 'video': await this.renderVideo(opts.url, body); break;
+          case 'audio': this.renderAudio(opts.url, body); break;
+          case 'epub': await this.renderEpub(opts.url, body); break;
+          case 'zip': await this.renderZip(body, opts); break;
+          case 'markdown': await this.renderMarkdown(opts.url, body); break;
+          case 'text': await this.renderText(opts.url, body); break;
+          case 'pdfjs': await this.renderPdf(opts.url, body, { pdfMode: 'pdfjs' }); break;
+          case 'native-pdf': await this.renderPdf(opts.url, body, { pdfMode: 'native' }); break;
+          case 'gdocs': await this.renderEmbedViewer(body, opts, 'gdocs'); break;
+          case 'm365': await this.renderEmbedViewer(body, opts, 'm365'); break;
+          case 'onlyoffice': await this.renderOnlyOffice(body, opts); break;
+          case 'external': await this.renderExternal(body, opts, opener); break;
+          default: this.renderUnsupported(body, opts.name);
+        }
+      } catch (e) {
+        body.innerHTML = '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>' +
+          R6T5.esc(previewErrText(e)) + '</div></div>';
+      }
+    },
+
+    async signEmbed(path, kind) {
+      return R6T5.post('/api/files/embed/sign', { path: path, kind: kind });
+    },
+
+    embedNoteBar(providerLabel, signed) {
+      return '<div class="pv-office-note"><span class="badge info">' + R6T5.esc(providerLabel) + '</span>' +
+        '<span class="faint small">由外部在线服务渲染，文件链接 10 分钟后自动失效</span>' +
+        '<span class="spacer"></span>' +
+        '<a class="btn sm ghost" href="' + R6T5.esc(signed.url) + '" target="_blank" rel="noopener noreferrer">在新窗口打开</a></div>';
+    },
+
+    async renderEmbedViewer(body, opts, provider) {
       var path = opts && opts.path;
       if (!path) { this.renderUnsupported(body); return; }
       body.innerHTML = '<div class="skel" style="height:220px"></div>';
-      var signed;
-      try {
-        signed = await R6T5.post('/api/files/embed/sign', { path: path });
-      } catch (e) {
-        body.innerHTML = '<div class="empty"><div class="ico">' + svgIcon('file') + '</div><h3>无法在线打开</h3>' +
-          '<p>' + R6T5.esc(previewErrText(e)) + '</p></div>';
-        return;
-      }
-      var provider = signed.provider === 'm365' ? 'Microsoft 365' : 'Google Docs';
-      var embedUrl = signed.provider === 'm365'
+      var signed = await this.signEmbed(path, provider);
+      var embedUrl = provider === 'm365'
         ? 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(signed.url)
         : 'https://docs.google.com/viewer?url=' + encodeURIComponent(signed.url) + '&embedded=true';
-      body.innerHTML =
-        '<div class="pv-office-note"><span class="badge info">' + provider + '</span>' +
-        '<span class="faint small">由外部在线服务渲染，文件链接 10 分钟后自动失效</span>' +
-        '<span class="spacer"></span>' +
-        '<a class="btn sm ghost" href="' + R6T5.esc(signed.url) + '" target="_blank" rel="noopener noreferrer">在新窗口打开</a></div>' +
+      var label = provider === 'm365' ? 'Microsoft Office 在线阅读器' : 'Google Docs 在线阅读器';
+      body.innerHTML = this.embedNoteBar(label, signed) +
         '<div class="pv-office"><iframe src="' + embedUrl + '" title="Office 在线预览" referrerpolicy="no-referrer"></iframe></div>';
+    },
+
+    async renderOnlyOffice(body, opts) {
+      var path = opts && opts.path;
+      if (!path) { this.renderUnsupported(body); return; }
+      body.innerHTML = '<div class="skel" style="height:220px"></div>';
+      var cfg = await R6T5.get('/api/files/office-config', { path: path });
+      if (!cfg || !cfg.enabled) {
+        body.innerHTML = '<div class="empty"><div class="ico">' + svgIcon('file') + '</div><h3>OnlyOffice 不可用</h3>' +
+          '<p>' + R6T5.esc((cfg && cfg.reason) || 'OnlyOffice 未配置') + '</p></div>';
+        return;
+      }
+      await this.loadScriptOnce(cfg.documentServerUrl.replace(/\/+$/, '') + '/web-apps/apps/api/documents/api.js');
+      body.innerHTML = '<div class="pv-office" id="pv-oo"></div>';
+      new window.DocsAPI.DocEditor('pv-oo', cfg.config);
+    },
+
+    async renderExternal(body, opts, opener) {
+      var path = opts && opts.path;
+      if (!path) { this.renderUnsupported(body); return; }
+      body.innerHTML = '<div class="skel" style="height:220px"></div>';
+      var signed = await this.signEmbed(path, 'external');
+      var embedUrl = String(opener.urlTemplate || '').replace('{src}', encodeURIComponent(signed.url));
+      body.innerHTML = this.embedNoteBar(opener.name, signed) +
+        '<div class="pv-office"><iframe src="' + embedUrl + '" title="在线预览" referrerpolicy="no-referrer"></iframe></div>';
     },
 
     async renderText(url, body) {
@@ -1065,16 +1117,11 @@
       var btn = row.querySelector('[data-op="preview"]');
       if (!btn) return;
       R6T5.get('/api/files/preview/meta', { path: item.path }).then(function (meta) {
-        if (!meta || !meta.previewable) {
-          btn.disabled = true;
-          btn.title = (meta && meta.reason) || '暂不支持在线预览，请下载查看';
-        } else {
-          btn.disabled = false;
-          btn.title = '预览';
-        }
+        btn.disabled = false;
+        btn.title = (meta && !meta.previewable && meta.reason) ? ('预览：' + meta.reason) : '预览';
       }).catch(function () {
-        btn.disabled = true;
-        btn.title = '预览状态获取失败';
+        btn.disabled = false;
+        btn.title = '预览';
       });
     });
   }
@@ -1243,25 +1290,128 @@
 
   /* ---------- 在线预览（登录态，meta 驱动） ---------- */
 
+  /* ---------- 打开方式关联：匹配 → 记忆直开 → 弹窗自选 → 展开全部 ---------- */
+  var openerCache = null;
+
+  function extOfName(name) {
+    return String(name || '').split('.').pop().toLowerCase();
+  }
+
+  async function loadOpeners() {
+    if (openerCache) return openerCache;
+    var data = await R6T5.get('/api/openers');
+    openerCache = (data && data.items) || [];
+    return openerCache;
+  }
+
+  function matchOpeners(openers, ext) {
+    return (openers || []).filter(function (o) {
+      if (o.available === false) return false;
+      return (o.exts || []).indexOf(ext) >= 0;
+    });
+  }
+
+  function openerMemoryKey(ext) { return 'r6t5.opener.' + ext; }
+
+  function memoryOpener(openers, ext) {
+    var id = null;
+    try { id = localStorage.getItem(openerMemoryKey(ext)); } catch (_) { id = null; }
+    if (!id) return null;
+    return (openers || []).find(function (o) { return o.id === id && o.available !== false; }) || null;
+  }
+
+  function launchOpener(opener, ctx) {
+    Preview.open({
+      title: ctx.item.name,
+      url: ctx.url,
+      kind: ctx.meta && ctx.meta.kind,
+      name: ctx.item.name,
+      path: ctx.item.path,
+      opener: opener,
+    });
+  }
+
+  var Opicker = {
+    ctx: null, selected: null, expanded: false, bound: false,
+
+    open(ctx) {
+      this.ctx = ctx;
+      this.selected = null;
+      this.expanded = false;
+      var box = document.getElementById('m-opener-pick');
+      if (!box) { launchOpener(ctx.matched[0], ctx); return; }
+      document.getElementById('op-pick-file').textContent = '打开 ' + ctx.item.name;
+      this.renderList();
+      this.setButtons();
+      var dl = document.getElementById('op-pick-download');
+      dl.href = '/api/files/download?' + R6T5.qs({ path: ctx.item.path });
+      R6T5.modal.open('#m-opener-pick');
+      if (!this.bound) {
+        this.bound = true;
+        document.getElementById('op-pick-close').addEventListener('click', () => R6T5.modal.close('#m-opener-pick'));
+        document.getElementById('op-pick-expand').addEventListener('click', () => {
+          this.expanded = !this.expanded;
+          this.renderList();
+        });
+        document.getElementById('op-pick-once').addEventListener('click', () => this.choose(false));
+        document.getElementById('op-pick-always').addEventListener('click', () => this.choose(true));
+        box.addEventListener('click', e => { if (e.target === box) R6T5.modal.close('#m-opener-pick'); });
+      }
+    },
+
+    renderList() {
+      var list = this.expanded ? this.ctx.all : this.ctx.matched;
+      document.getElementById('op-pick-empty').classList.toggle('hide', list.length > 0);
+      document.getElementById('op-pick-expand').textContent = this.expanded ? '收起方式列表' : '展开全部方式';
+      var box = document.getElementById('op-pick-list');
+      var self = this;
+      box.innerHTML = list.map(function (o) {
+        var sub = (o.kindLabel && o.kindLabel !== o.name) ? o.kindLabel : ((o.exts && o.exts.length) ? o.exts.join(' / ') : '');
+        return '<button type="button" class="op-pick-row' + (self.selected && self.selected.id === o.id ? ' active' : '') + '" data-id="' + R6T5.esc(o.id) + '">' +
+          '<span class="op-pick-name">' + R6T5.esc(o.name) + '</span>' +
+          (sub ? '<span class="op-pick-kind faint small">' + R6T5.esc(sub) + '</span>' : '') + '</button>';
+      }).join('');
+      box.querySelectorAll('.op-pick-row').forEach(function (r) {
+        r.addEventListener('click', function () {
+          self.selected = list.find(function (o) { return o.id === r.dataset.id; });
+          self.renderList();
+          self.setButtons();
+        });
+      });
+    },
+
+    setButtons() {
+      document.getElementById('op-pick-once').disabled = !this.selected;
+      document.getElementById('op-pick-always').disabled = !this.selected;
+    },
+
+    choose(always) {
+      if (!this.selected) return;
+      if (always) {
+        try { localStorage.setItem(openerMemoryKey(extOfName(this.ctx.item.name)), this.selected.id); } catch (_) { /* 隐私模式忽略 */ }
+      }
+      R6T5.modal.close('#m-opener-pick');
+      launchOpener(this.selected, this.ctx);
+    }
+  };
+
   async function openPreview(item) {
     var meta;
     try {
       meta = await guardedGet('/api/files/preview/meta', { path: item.path });
     } catch (e) { R6T5.toastError(e); return; }
-    if (!meta || !meta.previewable) {
-      R6T5.toast((meta && meta.reason) || '暂不支持在线预览', 'warn');
-      return;
-    }
+    var ext = extOfName(item.name);
     var url = '/api/files/preview?' + R6T5.qs({ path: item.path, exif: 1 });
-    Preview.open({
-      title: item.name,
-      url: url,
-      kind: meta.kind,
-      name: item.name,
-      path: item.path,
-      pdfMode: meta.pdfMode || meta.openWith,
-      openWith: meta.openWith,
-    });
+    var openers;
+    try {
+      openers = await loadOpeners();
+    } catch (e) { openers = []; }
+    var matched = matchOpeners(openers, ext);
+    var mem = memoryOpener(openers, ext);
+    var ctx = { item: item, meta: meta || {}, url: url, matched: matched, all: openers };
+    if (mem) return launchOpener(mem, ctx);
+    if (matched.length === 1) return launchOpener(matched[0], ctx);
+    Opicker.open(ctx);
   }
 
   /* ---------- 创建分享 ---------- */

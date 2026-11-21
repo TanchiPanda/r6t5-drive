@@ -21,16 +21,10 @@ export function extOfPath(logicalPath) {
   return m ? m[1].toLowerCase() : '';
 }
 
-/** office：none | gdocs | m365；pdf：pdfjs | native */
+/** pdf：pdfjs | native；office 方式已由 openers 关联表接管，不再读旧开关 */
 export function readPreviewConfig() {
-  const office = String(getSetting('preview_office', 'none') || 'none');
   const pdf = String(getSetting('preview_pdf', 'pdfjs') || 'pdfjs');
   return {
-    office: ['none', 'gdocs', 'm365'].includes(office) ? office : 'none',
     pdf: ['pdfjs', 'native'].includes(pdf) ? pdf : 'pdfjs',
   };
-}
-
-export function officeProvider() {
-  return readPreviewConfig().office;
 }

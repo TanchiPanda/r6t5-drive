@@ -1342,6 +1342,118 @@
     }
   }
 
+  /* ---------- 打开方式关联（管理员维护阅读器 ↔ 扩展名） ---------- */
+  const openerState = { items: [], editing: null };
+
+  async function initOpeners() {
+    const add = Admin.$('#opener-add-btn');
+    if (!add) return;
+    await loadOpeners();
+    add.addEventListener('click', () => openOpenerModal(null));
+    const form = Admin.$('#opener-form');
+    if (form) form.addEventListener('submit', onOpenerSubmit);
+    const kindSel = Admin.$('#op-kind');
+    if (kindSel) kindSel.addEventListener('change', syncOpenerTemplate);
+  }
+
+  async function loadOpeners() {
+    const tbody = Admin.$('#opener-table tbody');
+    if (!tbody) return;
+    let d;
+    try { d = await Admin.get('/api/admin/openers'); }
+    catch (e) { Admin.toastErr(e); return; }
+    openerState.items = (d && d.items) || [];
+    const platLabel = { all: '全平台', pc: 'PC端', mobile: '移动端' };
+    tbody.innerHTML = openerState.items.map(o => {
+      const badges = o.builtin ? '<span class="badge info">内置</span>' : '';
+      return '<tr data-id="' + R6T5.esc(o.id) + '">' +
+        '<td>' + R6T5.esc(o.name) + ' ' + badges + '</td>' +
+        '<td class="muted small">' + R6T5.esc((o.kindLabel && o.kindLabel !== o.name) ? o.kindLabel : o.kind) + '</td>' +
+        '<td class="mono-sm small">' + R6T5.esc(o.extList) + '</td>' +
+        '<td>' + (platLabel[o.platform] || o.platform) + '</td>' +
+        '<td>' + (o.enabled ? '<span class="badge ok">启用</span>' : '<span class="badge">停用</span>') + '</td>' +
+        '<td><div class="ops">' +
+        '<button class="btn sm" type="button" data-act="edit">编辑</button>' +
+        (o.builtin ? '' : '<button class="btn sm danger" type="button" data-act="del">删除</button>') +
+        '</div></td></tr>';
+    }).join('');
+    tbody.querySelectorAll('[data-act="edit"]').forEach(b =>
+      b.addEventListener('click', () => openOpenerModal(openerState.items.find(x => x.id === b.closest('tr').dataset.id))));
+    tbody.querySelectorAll('[data-act="del"]').forEach(b =>
+      b.addEventListener('click', () => onOpenerDelete(openerState.items.find(x => x.id === b.closest('tr').dataset.id))));
+  }
+
+  function openOpenerModal(o) {
+    openerState.editing = o || null;
+    const form = Admin.$('#opener-form');
+    form.reset();
+    Admin.$('#opener-err').textContent = '';
+    Admin.$('#opener-title').textContent = o ? '编辑打开方式' : '新增打开方式';
+    const kindSel = Admin.$('#op-kind');
+    if (o) {
+      kindSel.innerHTML = '<option value="' + R6T5.esc(o.kind) + '">' + R6T5.esc(o.kindLabel || o.kind) + '</option>';
+      kindSel.disabled = true;
+      Admin.$('#op-kind-hint').textContent = '内置类型不可修改';
+      Admin.$('#op-name').value = o.name;
+      Admin.$('#op-exts').value = o.extList;
+      Admin.$('#op-platform').value = o.platform || 'all';
+      Admin.$('#op-template').value = o.urlTemplate || '';
+      Admin.$('#op-enabled').checked = !!o.enabled;
+    } else {
+      // 新增只允许自定义外部阅读器；内置渲染类型由种子提供
+      kindSel.innerHTML = '<option value="external">自定义外部阅读器（URL 模板）</option>';
+      kindSel.disabled = false;
+      Admin.$('#op-kind-hint').textContent = '新增仅支持自定义外部阅读器；内置条目请直接编辑其扩展名绑定';
+      Admin.$('#op-enabled').checked = true;
+    }
+    syncOpenerTemplate();
+    R6T5.modal.open('#m-opener');
+  }
+
+  function syncOpenerTemplate() {
+    const kind = Admin.$('#op-kind').value;
+    const wrap = Admin.$('#op-template-wrap');
+    if (wrap) wrap.style.display = kind === 'external' ? '' : 'none';
+  }
+
+  async function onOpenerSubmit(ev) {
+    ev.preventDefault();
+    const err = Admin.$('#opener-err');
+    err.textContent = '';
+    const body = {
+      name: Admin.$('#op-name').value.trim(),
+      kind: Admin.$('#op-kind').value,
+      extList: Admin.$('#op-exts').value,
+      platform: Admin.$('#op-platform').value,
+      urlTemplate: Admin.$('#op-template').value.trim(),
+      enabled: Admin.$('#op-enabled').checked ? 1 : 0,
+    };
+    try {
+      if (openerState.editing) {
+        await Admin.patch('/api/admin/openers/' + encodeURIComponent(openerState.editing.id), body);
+      } else {
+        await Admin.post('/api/admin/openers', body);
+      }
+      R6T5.toast('打开方式已保存', 'ok');
+      R6T5.modal.close('#m-opener');
+      await loadOpeners();
+    } catch (e) {
+      const fields = e && e.details && e.details.fields;
+      err.textContent = fields ? Object.values(fields).join('；') : ((e && e.message) || '保存失败');
+      Admin.toastErr(e);
+    }
+  }
+
+  async function onOpenerDelete(o) {
+    if (!o) return;
+    if (!confirm('确定删除打开方式「' + o.name + '」？')) return;
+    try {
+      await Admin.del('/api/admin/openers/' + encodeURIComponent(o.id));
+      R6T5.toast('打开方式已删除', 'ok');
+      await loadOpeners();
+    } catch (e) { Admin.toastErr(e); }
+  }
+
   /* ---------- 分享 shares（管理端列表 + 撤销） ---------- */
   const ADMIN_SHARE_STATUS = {
     active: { label: '有效', cls: 'ok' },
@@ -1851,8 +1963,6 @@
     f.allowSignup.checked = !!s.allowSignup;
     f.trashRetentionDays.value = s.trashRetentionDays ?? 30;
     f.themeDefault.value = s.themeDefault || 'light';
-    if (f.previewOffice) f.previewOffice.value = (s.preview && s.preview.office) || 'none';
-    if (f.previewPdf) f.previewPdf.value = (s.preview && s.preview.pdf) || 'pdfjs';
 
     const gsel = f.defaultGroupId;
     gsel.innerHTML = settingGroups.map(g =>
@@ -1880,6 +1990,8 @@
     await loadMail();
     await loadSecurity();
     await loadOauth();
+    // 打开方式关联表（阅读器 ↔ 扩展名）
+    await initOpeners();
     const mailForm = Admin.$('#mail-form');
     if (mailForm) mailForm.addEventListener('submit', onMailSave);
     const mailTest = Admin.$('#mail-test-btn');
@@ -1984,11 +2096,7 @@
       defaultGroupId: f.defaultGroupId.value,
       allowSignup: f.allowSignup.checked,
       trashRetentionDays: Number(f.trashRetentionDays.value),
-      themeDefault: f.themeDefault.value,
-      preview: {
-        office: f.previewOffice ? f.previewOffice.value : undefined,
-        pdf: f.previewPdf ? f.previewPdf.value : undefined,
-      }
+      themeDefault: f.themeDefault.value
     };
     try {
       await Admin.patch('/api/admin/settings', body);

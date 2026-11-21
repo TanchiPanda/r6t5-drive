@@ -63,18 +63,11 @@ router.patch('/', (req, res, next) => {
       }
     }
     if (body.allowSignup != null) setSetting('allowSignup', body.allowSignup ? 'true' : 'false');
-    if (body.preview != null) {
-      const preview = body.preview || {};
-      if (preview.office != null) {
-        const v = String(preview.office);
-        if (!['none', 'gdocs', 'm365'].includes(v)) throw badRequest('invalid_input', 'Office 打开方式非法', { field: 'preview.office' });
-        setSetting('preview_office', v);
-      }
-      if (preview.pdf != null) {
-        const v = String(preview.pdf);
-        if (!['pdfjs', 'native'].includes(v)) throw badRequest('invalid_input', 'PDF 打开方式非法', { field: 'preview.pdf' });
-        setSetting('preview_pdf', v);
-      }
+    if (body.preview != null && body.preview.pdf != null) {
+      // PDF 默认渲染仍保留此设置作为兜底；Office 打开方式已移交「打开方式」关联表（/api/admin/openers）
+      const v = String(body.preview.pdf);
+      if (!['pdfjs', 'native'].includes(v)) throw badRequest('invalid_input', 'PDF 打开方式非法', { field: 'preview.pdf' });
+      setSetting('preview_pdf', v);
     }
     if (body.trashRetentionDays != null) {
       const n = Number(body.trashRetentionDays);

@@ -9,7 +9,6 @@ import { resolveStorage } from '../services/bindings.js';
 import { getNodeByPath } from '../services/nodes.js';
 import { getSetting } from '../db.js';
 import { sendEmbedFile } from '../services/preview.js';
-import { extOfPath, OFFICE_EXT, readPreviewConfig } from '../services/preview-config.js';
 import { writeAudit } from '../services/audit.js';
 import { logEvent } from '../lib/log.js';
 
@@ -66,18 +65,11 @@ function isPublicHost(url) {
   } catch { return false; }
 }
 
-// POST /api/files/embed/sign  { path }  → { url, provider, expiresAt }
+// POST /api/files/embed/sign  { path, kind? }  → { url, expiresAt }
+// 只签通用公网短期 URL；用哪个阅读器由前端「打开方式」决定，后端不再按管理员开关选 provider。
 signRouter.post('/sign', async (req, res, next) => {
   try {
     const logical = normalizeLogicalPath(String(req.body?.path || ''), req.user.email);
-    const ext = extOfPath(logical);
-    if (!OFFICE_EXT.includes(ext) && ext !== 'pdf') {
-      throw badRequest('embed_unsupported', '该类型不支持外部在线渲染', { ext });
-    }
-    const provider = readPreviewConfig().office;
-    if (ext !== 'pdf' && provider === 'none') {
-      throw badRequest('preview_disabled', '站点未启用 Office 在线打开方式，请联系管理员在「设置」里选择');
-    }
     const hit = resolveStorage({ email: req.user.email, logicalPath: logical, user: req.user });
     if (!hit || !hit.strategy) throw new ApiError(412, 'storage_not_configured', '站点还没有可用的存储策略');
     const node = getNodeByPath(logical);
@@ -89,9 +81,10 @@ signRouter.post('/sign', async (req, res, next) => {
     if (!isPublicHost(url)) {
       throw badRequest('embed_requires_public_url', '在线打开需要公网可访问的站点地址，请先在「设置 → 站点」填写对外地址 publicUrl');
     }
-    writeAudit({ email: req.user.email, action: 'embed_open', target: logical, detail: provider });
-    logEvent('embed', '生成外部预览链接', { user: req.user.email, target: logical, provider });
-    res.json({ ok: true, url, provider, expiresAt: payload.exp });
+    const kind = String(req.body?.kind || 'external');
+    writeAudit({ email: req.user.email, action: 'embed_open', target: logical, detail: kind });
+    logEvent('embed', '生成外部预览链接', { user: req.user.email, target: logical, kind });
+    res.json({ ok: true, url, expiresAt: payload.exp });
   } catch (e) { next(e); }
 });
 
