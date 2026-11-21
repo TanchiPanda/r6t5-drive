@@ -1,5 +1,5 @@
 # R6T5 Drive
-
+R6T5 提供：[`English`](docs/README-en.md)
 <p>
   <a href="https://github.com/TanchiPanda/r6t5-drive/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
   <a href="https://github.com/TanchiPanda/r6t5-drive/commits/main"><img alt="commits" src="https://img.shields.io/github/commit-activity/t/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
