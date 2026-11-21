@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/icon.png" width="110" alt="R6T5 Drive icon">
+</p>
+
 # R6T5 Drive
 R6T5 提供：[`English`](docs/README-en.md)
 <p>

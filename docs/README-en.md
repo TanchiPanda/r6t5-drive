@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" width="110" alt="R6T5 Drive icon">
+</p>
+
 # R6T5 Drive
 
 <p>
