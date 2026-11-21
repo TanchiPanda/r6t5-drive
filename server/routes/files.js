@@ -16,7 +16,7 @@ import {
   softDeleteRecursive, searchNodes,
 } from '../services/nodes.js';
 import { quotaForUser, quotaBig } from '../services/quota.js';
-import { reserveBlob, dropReservedBlob, finalizeBlob, releaseBlob, readPathOf } from '../services/blobs.js';
+import { reserveBlob, dropReservedBlob, finalizeBlob, releaseBlob, readPathOf, writeBlobFromTemp } from '../services/blobs.js';
 import { recordTraffic } from '../services/traffic.js';
 import { writeAudit } from '../services/audit.js';
 import * as registry from '../services/storage/registry.js';
@@ -193,6 +193,107 @@ router.post('/folder', async (req, res, next) => {
     });
     writeAudit({ email, action: 'mkdir', target: targetPath, ip: clientIp(req) });
     res.status(201).json({ path: targetPath, item: itemView(node, hit.strategy), strategy: strategyView(hit) });
+  } catch (e) { next(e); }
+});
+
+// ---- 新建空白/文本文档/Markdown ----
+const NEW_FILE_KINDS = {
+  blank: { name: '新文件', ext: '', mime: 'application/octet-stream', content: '' },
+  text: { name: '新建 文本文档', ext: 'txt', mime: 'text/plain; charset=utf-8', content: '' },
+  markdown: { name: '新建 Markdown', ext: 'md', mime: 'text/markdown; charset=utf-8', content: '# 新建 Markdown\n\n' },
+};
+
+/** 同目录重名时追加序号：新文件 → 新文件 2；带扩展名时序号插在扩展名前：新建 文本文档 2.txt */
+function uniqueChildName(parentLogical, stem, ext) {
+  let candidate = ext ? `${stem}.${ext}` : stem;
+  let n = 2;
+  while (getNodeByPath(joinLogical(parentLogical, candidate))) {
+    candidate = ext ? `${stem} ${n}.${ext}` : `${stem} ${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+router.post('/new', async (req, res, next) => {
+  try {
+    const email = req.user.email;
+    const parentLogical = normalizeLogicalPath(String(req.body?.path || email), email);
+    const kind = String(req.body?.kind || 'blank');
+    const spec = NEW_FILE_KINDS[kind];
+    if (!spec) throw badRequest('invalid_input', '未知的新建类型', { field: 'kind' });
+
+    const parent = getNodeByPath(parentLogical) || ensureDirNodes(email, parentLogical);
+    if (!parent || !parent.isDir) throw notFound('目标目录不存在');
+
+    const fileName = uniqueChildName(parentLogical, spec.name, spec.ext);
+    const targetPath = joinLogical(parentLogical, fileName);
+    const hit = resolveFor(req, targetPath);
+    assertWritable(hit.strategy, targetPath);
+
+    const quota = quotaForUser(req.user);
+    const qb = quotaBig(quota);
+    const size = Buffer.byteLength(spec.content, 'utf8');
+    if (qb.used + BigInt(size) > qb.spaceLimit) {
+      throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: String(size) });
+    }
+
+    const tmpFile = path.join(TMP_DIR, `new-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`);
+    fs.writeFileSync(tmpFile, spec.content, 'utf8');
+    let blob;
+    try {
+      blob = await writeBlobFromTemp({ strategy: hit.strategy, filename: fileName, tmpFile, sizeBytes: size, mime: spec.mime, createdBy: email });
+    } finally {
+      fs.rmSync(tmpFile, { force: true });
+    }
+
+    const node = insertNode({
+      email, parentId: parent.id, name: fileName, path: targetPath,
+      isDir: false, sizeBytes: String(size), mime: spec.mime, storageId: hit.strategy.id, blobId: blob.id,
+    });
+    writeAudit({ email, action: 'new_file', target: targetPath, ip: clientIp(req) });
+    res.status(201).json({ item: itemView(node, hit.strategy), quota: quotaForUser(req.user), strategy: strategyView(hit) });
+  } catch (e) { next(e); }
+});
+
+// ---- 保存文本内容（txt / md 白名单覆盖写） ----
+const CONTENT_WRITABLE = { txt: 'text/plain; charset=utf-8', md: 'text/markdown; charset=utf-8', markdown: 'text/markdown; charset=utf-8' };
+
+router.put('/content', async (req, res, next) => {
+  try {
+    const email = req.user.email;
+    const logical = normalizeLogicalPath(String(req.body?.path || ''), email);
+    const content = String(req.body?.content ?? '');
+    const node = getNodeByPath(logical);
+    if (!node || node.isDir) throw notFound('文件不存在');
+    const ext = (node.name.split('.').pop() || '').toLowerCase();
+    if (!CONTENT_WRITABLE[ext]) throw badRequest('invalid_input', '该类型不支持在线保存', { field: 'path' });
+
+    const hit = resolveFor(req, logical);
+    assertWritable(hit.strategy, logical);
+
+    const quota = quotaForUser(req.user);
+    const qb = quotaBig(quota);
+    const size = Buffer.byteLength(content, 'utf8');
+    if (qb.used - BigInt(Number(node.sizeBytes) || 0) + BigInt(size) > qb.spaceLimit) {
+      throw quotaSpace({ limitBytes: quota.spaceLimitBytes, usedBytes: quota.usedBytes, needBytes: String(size) });
+    }
+
+    const tmpFile = path.join(TMP_DIR, `save-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`);
+    fs.writeFileSync(tmpFile, content, 'utf8');
+    let blob;
+    try {
+      blob = await writeBlobFromTemp({ strategy: hit.strategy, filename: node.name, tmpFile, sizeBytes: size, mime: CONTENT_WRITABLE[ext], createdBy: email });
+    } finally {
+      fs.rmSync(tmpFile, { force: true });
+    }
+
+    const oldBlobId = node.blobId;
+    db.prepare('UPDATE nodes SET sizeBytes = ?, mime = ?, blobId = ?, updatedAt = ? WHERE id = ?')
+      .run(String(size), CONTENT_WRITABLE[ext], blob.id, nowIso(), node.id);
+    if (oldBlobId && oldBlobId !== blob.id) releaseBlob(oldBlobId);
+
+    writeAudit({ email, action: 'save_content', target: logical, bytes: String(size), ip: clientIp(req) });
+    res.json({ item: itemView(getNodeByPath(logical), hit.strategy), sizeBytes: size });
   } catch (e) { next(e); }
 });
 

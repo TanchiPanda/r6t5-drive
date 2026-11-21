@@ -26,6 +26,10 @@
     try { return await R6T5.request(p, { method: 'DELETE', body: body || {} }); }
     catch (e) { if (e && e.status === 401) redirectLogin(); throw e; }
   }
+  async function guardedPut(p, b) {
+    try { return await R6T5.put(p, b); }
+    catch (e) { if (e && e.status === 401) redirectLogin(); throw e; }
+  }
 
   function loginNext() {
     var n = new URLSearchParams(location.search).get('next');
@@ -339,6 +343,8 @@
       if (this.epubRendition) { try { this.epubRendition.destroy(); } catch (_) {} this.epubRendition = null; }
       if (this.epubBook) { try { this.epubBook.destroy(); } catch (_) {} this.epubBook = null; }
       if (this.monacoEditor) { try { this.monacoEditor.dispose(); } catch (_) {} this.monacoEditor = null; }
+      if (this._mdEditor) { try { this._mdEditor.dispose(); } catch (_) {} this._mdEditor = null; }
+      this._mdPath = null; this._mdSource = ''; this._textPath = null;
       if (this._pdfResizeHandler) {
         window.removeEventListener('resize', this._pdfResizeHandler);
         this._pdfResizeHandler = null;
@@ -356,8 +362,8 @@
         else if (kind === 'zip') await this.renderZip(body, opts || {});
         else if (kind === 'pdf') await this.renderPdf(url, body, opts || {});
         else if (kind === 'office') this.renderUnsupported(body, name);
-        else if (kind === 'markdown') await this.renderMarkdown(url, body);
-        else if (kind === 'text') await this.renderText(url, body);
+        else if (kind === 'markdown') await this.renderMarkdown(url, body, opts);
+        else if (kind === 'text') await this.renderText(url, body, opts);
         else this.renderUnsupported(body, name);
       } catch (e) {
         body.innerHTML = '<div class="note danger"><span class="ico">' + svgIcon('alert') + '</span><div>' +
@@ -596,8 +602,8 @@
           case 'audio': this.renderAudio(opts.url, body); break;
           case 'epub': await this.renderEpub(opts.url, body); break;
           case 'zip': await this.renderZip(body, opts); break;
-          case 'markdown': await this.renderMarkdown(opts.url, body); break;
-          case 'text': await this.renderText(opts.url, body); break;
+          case 'markdown': await this.renderMarkdown(opts.url, body, opts); break;
+          case 'text': await this.renderText(opts.url, body, opts); break;
           case 'pdfjs': await this.renderPdf(opts.url, body, { pdfMode: 'pdfjs' }); break;
           case 'native-pdf': await this.renderPdf(opts.url, body, { pdfMode: 'native' }); break;
           case 'gdocs': await this.renderEmbedViewer(body, opts, 'gdocs'); break;
@@ -661,50 +667,148 @@
         '<div class="pv-office"><iframe src="' + embedUrl + '" title="在线预览" referrerpolicy="no-referrer"></iframe></div>';
     },
 
-    async renderText(url, body) {
-      var res = await this.handleRes(await fetch(url, { credentials: 'same-origin' }));
-      var data = await res.json();
-      var lang = data.language ? '<span class="badge info mt2">' + R6T5.esc(data.language) + '</span>' : '';
-      var head = '<div class="pv-text-head">' + lang +
-        (data.sizeBytes != null ? '<span class="faint small"> · ' + R6T5.fmtBytes(data.sizeBytes) + '</span>' : '') + '</div>';
-      body.innerHTML = head + '<div class="pv-code-editor" id="pv-code"></div>' +
-        '<pre class="preview-code hide"><code></code></pre>';
-      var fallback = body.querySelector('pre.preview-code');
-      fallback.querySelector('code').textContent = data.content || '';
-      try {
-        await this.loadScriptOnce('/vendor/monaco/vs/loader.js');
+    /* Monaco 加载与挂载（文本 / Markdown 编辑共用） */
+    async ensureMonaco() {
+      if (this._monacoReady) return;
+      if (this._monacoLoading) return this._monacoLoading;
+      var self = this;
+      this._monacoLoading = (async function () {
+        await self.loadScriptOnce('/vendor/monaco/vs/loader.js');
         await new Promise(function (resolve, reject) {
           try {
             window.require.config({ paths: { vs: '/vendor/monaco/vs' } });
             window.require(['vs/editor/editor.main'], function () { resolve(); }, reject);
           } catch (e) { reject(e); }
         });
-        this.monacoEditor = window.monaco.editor.create(body.querySelector('#pv-code'), {
-          value: data.content || '',
-          language: monacoLang(data.language),
-          readOnly: true,
-          domReadOnly: true,
-          minimap: { enabled: false },
-          scrollBeyondLastLine: false,
-          fontSize: 13,
-          lineNumbers: 'on',
-          renderLineHighlight: 'none',
-          automaticLayout: true,
-          wordWrap: 'on',
-        });
+        self._monacoReady = true;
+      })();
+      return this._monacoLoading;
+    },
+
+    mountMonaco(el, value, language, readOnly) {
+      return window.monaco.editor.create(el, {
+        value: value || '',
+        language: language,
+        readOnly: !!readOnly,
+        domReadOnly: !!readOnly,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        fontSize: 13,
+        lineNumbers: 'on',
+        renderLineHighlight: 'none',
+        automaticLayout: true,
+        wordWrap: 'on',
+      });
+    },
+
+    editableTarget(opts) {
+      var path = (opts && opts.path) || (this.opts && this.opts.path);
+      var name = (opts && opts.name) || (this.opts && this.opts.name) || '';
+      var readonly = typeof strategyReadOnly === 'function' && strategyReadOnly();
+      return { path: path, name: name, editable: !!path && !readonly };
+    },
+
+    async saveContent(path, content, btn) {
+      var old = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+      try {
+        await guardedPut('/api/files/content', { path: path, content: content });
+        R6T5.toast('已保存', 'ok');
+        if (typeof Files !== 'undefined' && typeof loadDir === 'function') loadDir(Files.state.path);
+      } catch (e) { R6T5.toastError(e); }
+      finally {
+        if (btn) { btn.disabled = false; btn.textContent = old; }
+      }
+    },
+
+    async renderText(url, body, opts) {
+      var res = await this.handleRes(await fetch(url, { credentials: 'same-origin' }));
+      var data = await res.json();
+      var t = this.editableTarget(opts);
+      var editable = t.editable && /\.(txt|md|markdown)$/i.test(t.name);
+      this._textPath = t.path;
+      var lang = data.language ? '<span class="badge info mt2">' + R6T5.esc(data.language) + '</span>' : '';
+      var head = '<div class="pv-text-head">' + lang +
+        (data.sizeBytes != null ? '<span class="faint small"> · ' + R6T5.fmtBytes(data.sizeBytes) + '</span>' : '') +
+        '<span class="spacer"></span>' +
+        (editable ? '<button class="btn sm primary" id="pv-text-save" type="button">保存</button>' : '') + '</div>';
+      body.innerHTML = head + '<div class="pv-code-editor" id="pv-code"></div>' +
+        '<pre class="preview-code hide"><code></code></pre>';
+      var fallback = body.querySelector('pre.preview-code');
+      fallback.querySelector('code').textContent = data.content || '';
+      try {
+        await this.ensureMonaco();
+        this.monacoEditor = this.mountMonaco(body.querySelector('#pv-code'), data.content, monacoLang(data.language), !editable);
         body.querySelector('#pv-code').classList.remove('hide');
         fallback.classList.add('hide');
+        if (editable) {
+          var saveBtn = body.querySelector('#pv-text-save');
+          saveBtn.addEventListener('click', () => {
+            this.saveContent(this._textPath, this.monacoEditor.getValue(), saveBtn);
+          });
+        }
       } catch (_) {
         fallback.classList.remove('hide');
         body.querySelector('#pv-code').classList.add('hide');
       }
     },
 
-    async renderMarkdown(url, body) {
+    async renderMarkdown(url, body, opts) {
       var res = await this.handleRes(await fetch(url, { credentials: 'same-origin' }));
       var data = await res.json();
-      // html 由后端净化后返回，直接插入，不再做二次处理
-      body.innerHTML = '<div class="md-body">' + (data.html || '') + '</div>';
+      var t = this.editableTarget(opts);
+      var editable = t.editable && /\.(md|markdown)$/i.test(t.name);
+      this._mdPath = t.path;
+      this._mdSource = data.content || '';
+      this._mdMode = 'preview';
+      var toolbar = editable ?
+        '<div class="pv-text-head">' +
+        '<button class="btn sm" id="pv-md-edit" type="button">编辑</button>' +
+        '<button class="btn sm hide" id="pv-md-preview" type="button">预览</button>' +
+        '<span class="spacer"></span>' +
+        '<button class="btn sm primary hide" id="pv-md-save" type="button">保存</button></div>' : '';
+      body.innerHTML = toolbar +
+        '<div class="md-body" id="pv-md-view">' + (data.html || '') + '</div>' +
+        '<div class="pv-code-editor hide" id="pv-md-editor"></div>';
+      if (!editable) return;
+      var editBtn = body.querySelector('#pv-md-edit');
+      var previewBtn = body.querySelector('#pv-md-preview');
+      var saveBtn = body.querySelector('#pv-md-save');
+      var view = body.querySelector('#pv-md-view');
+      var editorEl = body.querySelector('#pv-md-editor');
+      var self = this;
+      editBtn.addEventListener('click', async function () {
+        try {
+          await self.ensureMonaco();
+          if (!self._mdEditor) {
+            self._mdEditor = self.mountMonaco(editorEl, self._mdSource, 'markdown', false);
+          }
+          self._mdMode = 'edit';
+          view.classList.add('hide');
+          editorEl.classList.remove('hide');
+          editBtn.classList.add('hide');
+          previewBtn.classList.remove('hide');
+          saveBtn.classList.remove('hide');
+        } catch (e) { R6T5.toastError(e); }
+      });
+      previewBtn.addEventListener('click', async function () {
+        if (self._mdEditor) self._mdSource = self._mdEditor.getValue();
+        self._mdMode = 'preview';
+        editorEl.classList.add('hide');
+        view.classList.remove('hide');
+        previewBtn.classList.add('hide');
+        editBtn.classList.remove('hide');
+        saveBtn.classList.add('hide');
+        /* 切回预览时重新拉取渲染后的 HTML，避免显示编辑前的旧内容 */
+        try {
+          const res = await self.handleRes(await fetch(url, { credentials: 'same-origin' }));
+          const data = await res.json();
+          view.innerHTML = data.html || '';
+        } catch (_) { /* 保留旧渲染 */ }
+      });
+      saveBtn.addEventListener('click', function () {
+        self.saveContent(self._mdPath, self._mdEditor ? self._mdEditor.getValue() : self._mdSource, saveBtn);
+      });
     },
 
     renderUnsupported(body, name) {
@@ -1012,14 +1116,12 @@
 
   function applyReadOnly() {
     var ro = strategyReadOnly();
-    var upload = document.getElementById('upload-btn');
-    var mkdir = document.getElementById('mkdir-btn');
+    var newBtn = document.getElementById('new-btn');
     var tip = readOnlyTip();
-    [upload, mkdir].forEach(function (btn) {
-      if (!btn) return;
-      btn.disabled = ro;
-      btn.title = ro ? tip : '';
-    });
+    if (newBtn) {
+      newBtn.disabled = ro;
+      newBtn.title = ro ? tip : '';
+    }
     /* 只读目录：隐藏/禁用多选与批量操作 */
     var allChecks = document.querySelectorAll('.row-check-input, #head-select-all');
     allChecks.forEach(function (c) { c.disabled = ro; });
@@ -1618,13 +1720,106 @@
 
   function bindFilesToolbar() {
     var fileInput = document.getElementById('file-input');
-    document.getElementById('upload-btn').addEventListener('click', function () { fileInput.click(); });
+    var dirInput = document.getElementById('dir-input');
+
+    /* 新建下拉菜单 */
+    var menu = document.getElementById('new-menu');
+    var pop = document.getElementById('new-pop');
+    document.getElementById('new-btn').addEventListener('click', function (e) {
+      e.stopPropagation();
+      pop.classList.toggle('hide');
+    });
+    document.addEventListener('click', function (e) {
+      if (menu && !menu.contains(e.target)) pop.classList.add('hide');
+    });
+    pop.querySelectorAll('[data-act]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        pop.classList.add('hide');
+        var act = item.getAttribute('data-act');
+        if (act === 'upload-file') fileInput.click();
+        else if (act === 'upload-dir') dirInput.click();
+        else if (act === 'clipboard') pasteFromClipboard();
+        else if (act === 'mkdir') openMkdir();
+        else if (act === 'new-blank') createNewFile('blank');
+        else if (act === 'new-text') createNewFile('text');
+        else if (act === 'new-md') createNewFile('markdown');
+      });
+    });
+
     fileInput.addEventListener('change', function () {
       if (fileInput.files.length) uploadFiles(fileInput.files);
       fileInput.value = '';
     });
 
-    document.getElementById('mkdir-btn').addEventListener('click', openMkdir);
+    /* 上传目录：按 webkitRelativePath 保留相对层级，先补建子目录再逐个上传 */
+    dirInput.addEventListener('change', async function () {
+      var files = Array.prototype.slice.call(dirInput.files || []);
+      dirInput.value = '';
+      if (!files.length) return;
+      if (strategyReadOnly()) { R6T5.toast(readOnlyTip(), 'warn'); return; }
+      var dirs = {};
+      files.forEach(function (f) {
+        var rel = f.webkitRelativePath || f.name;
+        var seg = rel.split('/');
+        if (seg.length > 1) dirs[seg.slice(0, -1).join('/')] = true;
+      });
+      try {
+        for (var d in dirs) await ensureRemoteDir(d);
+      } catch (e) { R6T5.toastError(e); return; }
+      files.forEach(function (f) {
+        var rel = f.webkitRelativePath || f.name;
+        var seg = rel.split('/');
+        var parent = seg.length > 1 ? joinRel(Files.state.path, seg.slice(0, -1).join('/')) : Files.state.path;
+        uploadFiles([f], { parentPath: parent });
+      });
+    });
+
+    /* 剪贴板：直接 Ctrl+V 粘贴，或点菜单尝试读取 */
+    document.addEventListener('paste', function (e) {
+      var items = e.clipboardData && e.clipboardData.files;
+      if (items && items.length) {
+        e.preventDefault();
+        uploadFiles(items);
+      }
+    });
+    function pasteFromClipboard() {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        navigator.clipboard.read().then(function (items) {
+          var blobs = [];
+          (items || []).forEach(function (it) {
+            (it.types || []).forEach(function (t) {
+              if (t.indexOf('image/') === 0) blobs.push(it.getType(t));
+            });
+          });
+          Promise.all(blobs).then(function (parts) {
+            var files = parts.filter(Boolean).map(function (b, i) {
+              return new File([b], '粘贴图片-' + (i + 1) + '.png', { type: b.type });
+            });
+            if (files.length) uploadFiles(files);
+            else R6T5.toast('剪贴板里没有可上传的文件，请直接在页面按 Ctrl+V 粘贴', 'info');
+          });
+        }).catch(function () {
+          R6T5.toast('浏览器不允许读取剪贴板，请直接在页面按 Ctrl+V 粘贴', 'info');
+        });
+      } else {
+        R6T5.toast('请直接在页面按 Ctrl+V 粘贴文件或图片', 'info');
+      }
+    }
+
+    async function ensureRemoteDir(relDir) {
+      var segs = relDir.split('/').filter(Boolean);
+      var acc = Files.state.path;
+      for (var i = 0; i < segs.length; i += 1) {
+        acc = joinRel(acc, segs[i]);
+        try {
+          await guardedPost('/api/files/folder', { path: parentRel(acc), name: segs[i] });
+        } catch (e) {
+          if (!(e && e.code === 'conflict')) throw e;
+        }
+      }
+    }
+    function joinRel(base, sub) { return base ? base + '/' + sub : sub; }
+    function parentRel(p) { var i = p.lastIndexOf('/'); return i > 0 ? p.slice(0, i) : p; }
 
     /* 批量操作条 */
     document.getElementById('batch-clear').addEventListener('click', clearSelection);
@@ -1696,7 +1891,7 @@
 
   /* ---------- 上传：小文件走表单直传，大文件走分片 ---------- */
 
-  function uploadFiles(fileList) {
+  function uploadFiles(fileList, opts) {
     if (strategyReadOnly()) {
       R6T5.toast(readOnlyTip(), 'warn');
       return;
@@ -1704,12 +1899,13 @@
     var files = Array.prototype.slice.call(fileList);
     if (!files.length) return;
     files.forEach(function (file) {
-      if (file.size > CHUNK_THRESHOLD) startChunkUpload(file);
-      else uploadOneSimple(file);
+      if (file.size > CHUNK_THRESHOLD) startChunkUpload(file, opts);
+      else uploadOneSimple(file, opts);
     });
   }
 
-  function uploadOneSimple(file) {
+  function uploadOneSimple(file, opts) {
+    var parentPath = (opts && opts.parentPath) || Files.state.path;
     var queue = document.getElementById('upload-queue');
     queue.classList.remove('hide');
     var row = document.createElement('div');
@@ -1724,7 +1920,7 @@
     var status = row.querySelector('.up-status');
 
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/files/upload?' + R6T5.qs({ path: Files.state.path }));
+    xhr.open('POST', '/api/files/upload?' + R6T5.qs({ path: parentPath }));
     xhr.upload.onprogress = function (e) {
       if (e.lengthComputable) {
         var p = Math.round(e.loaded / e.total * 100);
@@ -1801,14 +1997,14 @@
     opts = opts || {};
     var row = chunkQueueRow(file.name);
     var job = { file: file, row: row, received: opts.received || [], chunkSize: opts.chunkSize,
-      uploadId: opts.uploadId, parentPath: Files.state.path, name: file.name, sizeBytes: file.size };
+      uploadId: opts.uploadId, parentPath: opts.parentPath || Files.state.path, name: file.name, sizeBytes: file.size };
     var view = chunkJobView(job);
     Files.chunkJobs.push(view);
     setChunkStatus(view, '初始化…', 'faint');
 
     try {
       var initBody = {
-        parentPath: Files.state.path,
+        parentPath: job.parentPath,
         name: file.name,
         sizeBytes: file.size,
         chunkSize: DEFAULT_CHUNK_SIZE
@@ -2373,6 +2569,21 @@
       R6T5.modal.close('#m-mkdir');
       R6T5.toast('已创建文件夹', 'ok');
       loadDir(Files.state.path);
+    } catch (e) { R6T5.toastError(e); }
+  }
+
+  /* 新建文件（空白 / 文本 / Markdown），创建后在列表中定位并打开预览 */
+  async function createNewFile(kind) {
+    if (strategyReadOnly()) { R6T5.toast(readOnlyTip(), 'warn'); return; }
+    try {
+      var res = await guardedPost('/api/files/new', { path: Files.state.path, kind: kind });
+      var created = res && res.item;
+      await loadDir(Files.state.path);
+      R6T5.toast('已创建 ' + (created ? created.name : '文件'), 'ok');
+      if (created && kind !== 'blank') {
+        var target = Files.state.items.find(function (x) { return x.path === created.path; });
+        if (target) openPreview(target);
+      }
     } catch (e) { R6T5.toastError(e); }
   }
 

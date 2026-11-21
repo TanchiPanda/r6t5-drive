@@ -31,6 +31,7 @@
     get(p, q) { return R6T5.request(p + (q ? '?' + R6T5.qs(q) : '')); },
     post(p, body) { return R6T5.request(p, { method: 'POST', body: body || {} }); },
     patch(p, body) { return R6T5.request(p, { method: 'PATCH', body: body || {} }); },
+    put(p, body) { return R6T5.request(p, { method: 'PUT', body: body || {} }); },
     del(p, q) { return R6T5.request(p + (q ? '?' + R6T5.qs(q) : ''), { method: 'DELETE' }); },
 
     /* ---------- 工具 ---------- */

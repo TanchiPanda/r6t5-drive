@@ -43,8 +43,20 @@
             </div>
           </div>
           <div class="row tight mt2">
-            <button class="btn primary" id="upload-btn" type="button"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-upload"></use></svg> 上传</button>
-            <button class="btn" id="mkdir-btn" type="button"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-plus"></use></svg> 新建文件夹</button>
+            <div class="drop" id="new-menu">
+              <button class="btn primary" id="new-btn" type="button"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-plus"></use></svg> 新建</button>
+              <div class="drop-pop hide" id="new-pop" role="menu">
+                <button type="button" class="drop-item" data-act="upload-file"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-upload"></use></svg>上传文件</button>
+                <button type="button" class="drop-item" data-act="upload-dir"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-folder"></use></svg>上传目录</button>
+                <button type="button" class="drop-item" data-act="clipboard"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-file"></use></svg>从剪贴板上传</button>
+                <div class="drop-sep"></div>
+                <button type="button" class="drop-item" data-act="mkdir"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-plus"></use></svg>创建文件夹</button>
+                <div class="drop-sep"></div>
+                <button type="button" class="drop-item" data-act="new-blank"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-file"></use></svg>空白文件</button>
+                <button type="button" class="drop-item" data-act="new-text"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-pencil"></use></svg>文本 (.txt)</button>
+                <button type="button" class="drop-item" data-act="new-md"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#i-text"></use></svg>Markdown (.md)</button>
+              </div>
+            </div>
             <div class="flex1"></div>
             <div class="searchbox">
               <svg class="search-ico" aria-hidden="true"><use href="/assets/icons/sprite.svg#i-search"></use></svg>
@@ -305,6 +317,7 @@
 </aside>
 
 <input type="file" id="file-input" multiple class="hide">
+<input type="file" id="dir-input" webkitdirectory multiple class="hide">
 <div class="toasts"></div>
 <script src="/assets/api.js"></script>
 <script src="/assets/sidebar.js"></script>

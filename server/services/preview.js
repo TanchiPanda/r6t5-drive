@@ -492,7 +492,7 @@ async function sendMarkdown({ res, strategy, logicalPath, node }) {
   const html = renderMarkdown(raw);
   assertSafeHtml(html); // 防御纵深：命中非法内容直接抛错，不外泄
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.json({ kind: 'markdown', html, sizeBytes: buf.length });
+  res.json({ kind: 'markdown', html, content: raw, sizeBytes: buf.length });
 }
 
 // ---- 主入口 ----
