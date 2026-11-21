@@ -6,6 +6,7 @@ import https from 'node:https';
 import http from 'node:http';
 import fs from 'node:fs';
 import { notFound, upstreamError } from '../../lib/errors.js';
+import { buildCorsXml } from './cors-xml.js';
 
 const TIMEOUT_MS = 15_000;
 const UNSIGNED_PAYLOAD = 'UNSIGNED-PAYLOAD';
@@ -80,9 +81,10 @@ function signedRequest(cfg, url, method, extraHeaders = {}, queryParams = {}) {
   const amzDate = now.toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
   const dateStamp = amzDate.slice(0, 8);
 
-  // 规范查询串：key/value 均按 RFC3986 编码，按 key 字典序排列
+  // 规范查询串：key/value 均按 RFC3986 编码，按 key 字典序排列；
+  // 空字符串值保留（如 PutBucketCors 的子资源 cors=），S3 视为合法空值
   const qsEntries = Object.entries(queryParams)
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .filter(([, v]) => v !== undefined && v !== null)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([k, v]) => `${encodeQueryValue(k)}=${encodeQueryValue(String(v))}`);
   const canonicalQuery = qsEntries.join('&');
@@ -136,7 +138,7 @@ function signedRequest(cfg, url, method, extraHeaders = {}, queryParams = {}) {
 function queryString(queryParams) {
   if (!queryParams) return '';
   const entries = Object.entries(queryParams)
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .filter(([, v]) => v !== undefined && v !== null)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   if (!entries.length) return '';
   return '?' + entries.map(([k, v]) => `${encodeQueryValue(k)}=${encodeQueryValue(String(v))}`).join('&');
@@ -432,6 +434,25 @@ export const s3Driver = {
         details: { bucket: cfgOf(strategy).bucket, endpoint: cfgOf(strategy).endpoint, latencyMs: Date.now() - started, status },
       };
     }
+  },
+
+  /**
+   * 一键写入 Bucket CORS：PUT /?cors（PutBucketCors）。
+   * policy = { allowedOrigins[], allowedMethods[], allowedHeaders[], exposeHeaders[], maxAgeSeconds }
+   */
+  async putBucketCors(strategy, policy = {}) {
+    const cfg = cfgOf(strategy);
+    if (!cfg.endpoint || !cfg.bucket || !cfg.accessKeyId || !cfg.secretAccessKey) {
+      return { ok: false, message: '配置不完整：endpoint / bucket / AccessKey / SecretKey 必填' };
+    }
+    const xml = buildCorsXml(policy);
+    const res = await request(cfg, 'PUT', '', {
+      query: { cors: '' },
+      bodyBuffer: Buffer.from(xml, 'utf8'),
+      extraHeaders: { 'Content-Type': 'application/xml' },
+      op: 'put-bucket-cors',
+    });
+    return { ok: true, message: `CORS 策略已写入 bucket「${cfg.bucket}」`, status: res.status };
   },
 };
 

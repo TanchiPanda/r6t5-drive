@@ -29,10 +29,10 @@ export function encodeQueryValue(v) {
     .replace(/[!'()*]/g, (ch) => '%' + ch.charCodeAt(0).toString(16).toUpperCase());
 }
 
-/** 规范查询串：key/value 均按 RFC3986 编码，按 key 字典序排列 */
+/** 规范查询串：key/value 均按 RFC3986 编码，按 key 字典序排列；空串值保留（如 cors= 子资源） */
 export function canonicalQuery(queryParams) {
   return Object.entries(queryParams || {})
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .filter(([, v]) => v !== undefined && v !== null)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([k, v]) => `${encodeQueryValue(k)}=${encodeQueryValue(String(v))}`)
     .join('&');

@@ -88,6 +88,18 @@
 .disclosure .notice{font-size:var(--fs-sm);color:var(--fg-dim)}
 .ack-row{margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--line)}
 
+/* ---------- 存储策略：CORS 策略 ---------- */
+.cors-block{margin-top:var(--s4)}
+.cors-block .notice{font-size:var(--fs-sm);color:var(--fg-dim)}
+.cors-methods{display:flex;gap:var(--s3);flex-wrap:wrap}
+.cors-maxage{width:170px;flex:none}
+.cors-pre-wrap{margin:var(--s2) 0}
+.cors-pre{margin:0;padding:var(--s3);border-radius:var(--r-sm);background:var(--panel-3);border:1px solid var(--line);font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--fg-dim);white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto}
+.cors-actions{margin-top:var(--s2)}
+.cors-docs{margin-top:var(--s3);font-size:var(--fs-sm);color:var(--fg-dim)}
+.cors-docs summary{cursor:pointer}
+.cors-docs ul{margin:var(--s2) 0 0 18px;display:flex;flex-direction:column;gap:6px}
+
 /* ---------- 分页 ---------- */
 .pager{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s3);font-size:var(--fs-sm);color:var(--muted)}
 .pager .spacer{margin-left:auto}

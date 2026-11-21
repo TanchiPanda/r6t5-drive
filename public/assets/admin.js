@@ -788,6 +788,7 @@
   let strategies = [];
   let editingStrategy = null;
   let testState = { status: 'untested', message: '' };
+  let siteOrigin = '';
 
   const TYPE_LABEL = { volume: '本地卷', s3: 'S3', github: 'GitHub' };
   const TYPE_BADGE = { volume: '', s3: 'info', github: 'warn' };
@@ -830,6 +831,15 @@
   async function loadStorageTypes() {
     try { const r = await Admin.get('/api/admin/storage/types'); storageTypes = (r && r.items) || []; }
     catch (e) { storageTypes = []; Admin.toastErr(e); }
+    // 取站点对外地址作为 CORS 默认来源
+    try {
+      const st = await Admin.get('/api/admin/settings');
+      siteOrigin = originFromUrl(st && st.publicUrl) || location.origin;
+    } catch (_) { siteOrigin = location.origin; }
+  }
+
+  function originFromUrl(u) {
+    try { return new URL(u).origin; } catch { return ''; }
   }
 
   async function loadStorageList() {
@@ -971,6 +981,12 @@
         (f.help ? '<span class="help">' + R6T5.esc(f.help) + '</span>' : '') + secretHint + '</div>';
     }).join('');
 
+    // S3 兼容类型：追加 CORS 策略说明 + 实时预览 + 一键写入
+    if (currentType.cors) {
+      dyn.innerHTML += corsBlockHtml();
+      bindCorsBlock();
+    }
+
     // GitHub 策略强制只读，不可取消
     const ro = Admin.$('#st-readonly');
     if (currentType.type === 'github') { ro.checked = true; ro.disabled = true; }
@@ -990,6 +1006,143 @@
     if (note) note.innerHTML = '';
     const warn = Admin.$('#st-test-warn');
     if (warn) { warn.textContent = ''; warn.className = 'help'; }
+  }
+
+  /* ---------- CORS 策略（S3 兼容） ---------- */
+  const CORS_METHODS = ['GET', 'PUT', 'POST', 'HEAD', 'DELETE'];
+
+  function corsBlockHtml() {
+    const mOpts = CORS_METHODS.map(m =>
+      '<label class="check"><input type="checkbox" name="cors-method" value="' + m + '"' +
+      (m !== 'DELETE' ? ' checked' : '') + '><span>' + m + '</span></label>').join('');
+    return (
+      '<div class="dc-block cors-block">' +
+        '<div class="dc-title">CORS 策略（跨域资源共享）</div>' +
+        '<div class="notice mb2">本系统默认服务端中转读写，CORS 不是必需；浏览器直传、自定义域名外链或跨域预览时，需要在 Bucket 上放行本站来源。</div>' +
+        '<div class="field"><label for="cors-origins">允许来源（每行一个，* 表示全部放行）</label>' +
+          '<textarea class="input" id="cors-origins" rows="2" placeholder="https://drive.example.com"></textarea></div>' +
+        '<div class="field"><label>允许方法</label><div class="cors-methods">' + mOpts + '</div></div>' +
+        '<div class="row tight">' +
+          '<div class="flex1 field"><label for="cors-headers">允许请求头</label>' +
+            '<input class="input" id="cors-headers" value="*" placeholder="* 或 Content-Type, x-amz-*"></div>' +
+          '<div class="field cors-maxage"><label for="cors-maxage">缓存秒数</label>' +
+            '<input class="input" id="cors-maxage" type="number" min="1" value="3000"></div>' +
+        '</div>' +
+        '<div class="field"><label for="cors-expose">暴露响应头</label>' +
+          '<input class="input" id="cors-expose" value="ETag, Content-Length" placeholder="ETag, Content-Length"></div>' +
+        '<div class="cors-pre-wrap"><pre class="cors-pre" id="cors-xml"></pre></div>' +
+        '<div class="row tight cors-actions">' +
+          '<button class="btn sm ghost" type="button" id="cors-copy-xml">复制 XML</button>' +
+          '<button class="btn sm ghost" type="button" id="cors-copy-json">复制 JSON</button>' +
+          '<div class="spacer"></div>' +
+          '<button class="btn sm primary" type="button" id="cors-apply">一键配置</button>' +
+        '</div>' +
+        '<div id="cors-status"></div>' +
+        '<details class="cors-docs"><summary>各厂商手动配置入口</summary><ul>' +
+          '<li><b>AWS S3</b>：控制台 → Bucket → 权限 → 跨域资源共享（CORS）→ 编辑，粘贴上方 XML。</li>' +
+          '<li><b>Cloudflare R2</b>：控制台 → Bucket → 设置 → CORS Policy，粘贴 JSON。</li>' +
+          '<li><b>阿里云 OSS</b>：Bucket → 权限管理 → 跨域设置 → 新建规则，按来源 / 方法 / 允许头 / 暴露头填写。</li>' +
+          '<li><b>腾讯云 COS</b>：Bucket → 安全管理 → 跨域访问 CORS 设置 → 添加规则。</li>' +
+          '<li><b>MinIO</b>：<span class="mono-sm">mc cors set &lt;bucket&gt; ./cors.xml</span>，或 Browser 控制台 Bucket → Configuration → CORS。</li>' +
+        '</ul><p class="help mb0">「一键配置」通过 S3 PutBucketCors 接口直接写入，无需登录厂商控制台。</p></details>' +
+      '</div>');
+  }
+
+  function corsReadState() {
+    const origins = Admin.$('#cors-origins').value.split('\n').map(s => s.trim()).filter(Boolean);
+    const methods = Admin.$$('input[name="cors-method"]:checked').map(c => c.value);
+    const allowedHeaders = Admin.$('#cors-headers').value.split(',').map(s => s.trim()).filter(Boolean);
+    const expose = Admin.$('#cors-expose').value.split(',').map(s => s.trim()).filter(Boolean);
+    const maxAge = Number(Admin.$('#cors-maxage').value) || 3000;
+    return { origins, methods, allowedHeaders, expose, maxAge };
+  }
+
+  function corsXmlText(st) {
+    const esc = R6T5.esc;
+    const line = tag => v => '<' + tag + '>' + esc(v) + '</' + tag + '>';
+    return [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+      '  <CORSRule>',
+      ...st.origins.map(line('AllowedOrigin')),
+      ...st.methods.map(line('AllowedMethod')),
+      ...(st.allowedHeaders.length ? st.allowedHeaders : ['*']).map(line('AllowedHeader')),
+      ...st.expose.map(line('ExposeHeader')),
+      '    <MaxAgeSeconds>' + st.maxAge + '</MaxAgeSeconds>',
+      '  </CORSRule>',
+      '</CORSConfiguration>',
+    ].join('\n');
+  }
+
+  function corsJsonText(st) {
+    return JSON.stringify([{
+      AllowedOrigins: st.origins,
+      AllowedMethods: st.methods,
+      AllowedHeaders: st.allowedHeaders.length ? st.allowedHeaders : ['*'],
+      ExposeHeaders: st.expose,
+      MaxAgeSeconds: st.maxAge,
+    }], null, 2);
+  }
+
+  function refreshCorsPreview() {
+    const pre = Admin.$('#cors-xml');
+    if (pre) pre.textContent = corsXmlText(corsReadState());
+  }
+
+  function bindCorsBlock() {
+    const origins = Admin.$('#cors-origins');
+    if (origins && !origins.dataset.filled) {
+      origins.value = siteOrigin || location.origin;
+      origins.dataset.filled = '1';
+    }
+    ['#cors-origins', '#cors-headers', '#cors-expose', '#cors-maxage'].forEach(sel => {
+      const el = Admin.$(sel);
+      if (el) el.addEventListener('input', refreshCorsPreview);
+    });
+    Admin.$$('input[name="cors-method"]').forEach(c => c.addEventListener('change', refreshCorsPreview));
+    refreshCorsPreview();
+    Admin.$('#cors-copy-xml').addEventListener('click', () => copyCorsText(Admin.$('#cors-xml').textContent, 'XML'));
+    Admin.$('#cors-copy-json').addEventListener('click', () => copyCorsText(corsJsonText(corsReadState()), 'JSON'));
+    Admin.$('#cors-apply').addEventListener('click', onApplyCors);
+  }
+
+  async function copyCorsText(text, label) {
+    try {
+      await navigator.clipboard.writeText(text);
+      R6T5.toast(label + ' 已复制', 'ok');
+    } catch (_) {
+      R6T5.toast('复制失败，请手动选择复制', 'warn');
+    }
+  }
+
+  async function onApplyCors() {
+    if (!editingStrategy) {
+      R6T5.toast('请先保存策略，再一键配置 CORS', 'warn');
+      return;
+    }
+    const st = corsReadState();
+    if (!st.origins.length) { R6T5.toast('至少填写一个允许来源', 'warn'); return; }
+    const btn = Admin.$('#cors-apply');
+    const box = Admin.$('#cors-status');
+    btn.disabled = true;
+    try {
+      const r = await Admin.post('/api/admin/storage/' + encodeURIComponent(editingStrategy.id) + '/cors', {
+        allowedOrigins: st.origins,
+        allowedMethods: st.methods,
+        allowedHeaders: st.allowedHeaders,
+        exposeHeaders: st.expose,
+        maxAgeSeconds: st.maxAge,
+      });
+      box.innerHTML = '<div class="note ok mt2"><span class="ico">' + Admin.icon('check') + '</span><div>' +
+        R6T5.esc((r && r.message) || 'CORS 策略已应用') + '</div></div>';
+      R6T5.toast('CORS 策略已应用', 'ok');
+    } catch (e) {
+      box.innerHTML = '<div class="note danger mt2"><span class="ico">' + Admin.icon('alert') + '</span><div>' +
+        R6T5.esc((e && e.message) || 'CORS 应用失败') + '</div></div>';
+      Admin.toastErr(e);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   function readDynConfig() {

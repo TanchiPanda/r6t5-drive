@@ -2,7 +2,7 @@ import { Router } from 'express';
 import * as registry from '../services/storage/registry.js';
 import { getDriver, driverCaps } from '../services/storage/driver.js';
 import { db, getSetting, setSetting } from '../db.js';
-import { badRequest, conflict, notFound } from '../lib/errors.js';
+import { badRequest, conflict, notFound, upstreamError } from '../lib/errors.js';
 import { writeAudit } from '../services/audit.js';
 import { nowIso } from '../lib/format.js';
 
@@ -37,6 +37,7 @@ const VENDOR_SPECS = {
     label: '阿里云 OSS',
     required: ['region', 'bucket', 'accessKeyId', 'secretAccessKey'],
     caps: { read: true, write: true, list: true },
+    cors: true,
     fields: [
       { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false, placeholder: 'https://<bucket>.<region>.aliyuncs.com' },
       { key: 'region', label: 'Region', type: 'text', required: true, placeholder: 'oss-cn-hangzhou' },
@@ -51,6 +52,7 @@ const VENDOR_SPECS = {
     label: '腾讯云 COS',
     required: ['region', 'bucket', 'appid', 'accessKeyId', 'secretAccessKey'],
     caps: { read: true, write: true, list: true },
+    cors: true,
     fields: [
       { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false },
       { key: 'region', label: 'Region', type: 'text', required: true, placeholder: 'ap-guangzhou' },
@@ -66,6 +68,7 @@ const VENDOR_SPECS = {
     label: '金山云 KS3',
     required: ['region', 'bucket', 'accessKeyId', 'secretAccessKey'],
     caps: { read: true, write: true, list: true },
+    cors: true,
     fields: [
       { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false },
       { key: 'region', label: 'Region', type: 'text', required: true, placeholder: 'ks3-cn-beijing' },
@@ -80,6 +83,7 @@ const VENDOR_SPECS = {
     label: '华为云 OBS',
     required: ['region', 'bucket', 'accessKeyId', 'secretAccessKey'],
     caps: { read: true, write: true, list: true },
+    cors: true,
     fields: [
       { key: 'endpoint', label: 'Endpoint（可选）', type: 'text', required: false },
       { key: 'region', label: 'Region', type: 'text', required: true, placeholder: 'cn-north-4' },
@@ -140,6 +144,7 @@ const TYPE_REGISTRY = {
     label: 'S3 兼容对象存储',
     status: 'ready',
     capabilities: { read: true, write: true, list: true },
+    cors: true,
     publicFields: PUBLIC_FIELDS,
     neverPublic: [
       { key: 'config.endpoint', label: '服务端点' },
@@ -188,6 +193,7 @@ for (const [type, spec] of Object.entries(VENDOR_SPECS)) {
     publicFields: PUBLIC_FIELDS,
     neverPublic: spec.fields.filter((f) => f.secret).map((f) => ({ key: `config.${f.key}`, label: f.label })),
     fields: spec.fields,
+    cors: !!spec.cors,
     notice: '创建后，普通用户只会看到策略名、类型、区域、容量与是否只读；密钥类字段仅存服务端，永不下发。',
     docsHint: spec.docsHint,
   };
@@ -395,6 +401,55 @@ router.post('/validate', async (req, res, next) => {
       result = { ok: false, message: e.message || String(e) };
     }
     res.json({ ok: !!result.ok, message: result.message || '', details: result.details || {} });
+  } catch (e) { next(e); }
+});
+
+// ---------- CORS 策略（PutBucketCors 一键写入） ----------
+const CORS_ALLOWED_METHODS = ['GET', 'PUT', 'POST', 'HEAD', 'DELETE'];
+
+function normalizeCorsPolicy(body) {
+  const origins = (Array.isArray(body.allowedOrigins) ? body.allowedOrigins : String(body.allowedOrigins || '').split(/[\n,]/))
+    .map((o) => String(o).trim()).filter(Boolean);
+  if (!origins.length) throw badRequest('invalid_input', '至少填写一个允许来源', { field: 'allowedOrigins' });
+  const methods = (Array.isArray(body.allowedMethods) ? body.allowedMethods : String(body.allowedMethods || '').split(/[,\s]/))
+    .map((m) => String(m).trim().toUpperCase())
+    .filter((m) => CORS_ALLOWED_METHODS.includes(m));
+  const allowedMethods = methods.length ? methods : ['GET', 'PUT', 'POST', 'HEAD'];
+  const allowedHeaders = (Array.isArray(body.allowedHeaders) ? body.allowedHeaders : String(body.allowedHeaders || '').split(','))
+    .map((h) => h.trim()).filter(Boolean);
+  const exposeHeaders = (Array.isArray(body.exposeHeaders) ? body.exposeHeaders : String(body.exposeHeaders || '').split(','))
+    .map((h) => h.trim()).filter(Boolean);
+  const maxAge = Number(body.maxAgeSeconds);
+  return {
+    allowedOrigins: origins,
+    allowedMethods,
+    allowedHeaders: allowedHeaders.length ? allowedHeaders : ['*'],
+    exposeHeaders: exposeHeaders.length ? exposeHeaders : ['ETag', 'Content-Length'],
+    maxAgeSeconds: Number.isFinite(maxAge) && maxAge >= 1 ? Math.min(604800, Math.trunc(maxAge)) : 3000,
+  };
+}
+
+// 一键把 CORS 策略写入已保存策略的 Bucket（驱动需实现 putBucketCors）
+router.post('/:id/cors', async (req, res, next) => {
+  try {
+    const s = registry.getStrategy(req.params.id);
+    if (!s) throw notFound('策略不存在');
+    const driver = getDriver(s.type);
+    if (typeof driver.putBucketCors !== 'function') {
+      throw badRequest('cors_unsupported', '该存储类型不支持一键配置 CORS', { type: s.type });
+    }
+    const policy = normalizeCorsPolicy(req.body || {});
+    let result;
+    try {
+      result = await driver.putBucketCors(s, policy);
+    } catch (e) {
+      result = { ok: false, message: e.message || String(e), details: e.details || {} };
+    }
+    if (!result || !result.ok) {
+      throw upstreamError(s.type, (result && result.message) || 'CORS 写入失败', result && result.details);
+    }
+    writeAudit({ email: 'admin', action: 'storage_cors', target: s.name, detail: 'put' });
+    res.json({ ok: true, message: result.message || 'CORS 策略已应用', details: result.details || {} });
   } catch (e) { next(e); }
 });
 

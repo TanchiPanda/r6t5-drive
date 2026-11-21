@@ -5,6 +5,7 @@ import { logEvent, currentContext } from '../lib/log.js';
 const VALID_ACTIONS = new Set([
   'login', 'logout', 'upload', 'download', 'delete', 'restore', 'rename', 'move',
   'mkdir', 'admin_login', 'settings_update', 'group_create', 'storage_create',
+  'storage_cors',
   'user_disable', 'share_create', 'share_revoke', 'compress', 'extract',
   // P6 账号来源 / 本地账号管理
   'user_ban', 'user_unban', 'user_delete', 'user_create', 'user_password',
@@ -35,6 +36,7 @@ const ACTION_LABELS = {
   group_create: '创建用户组',
   group_update: '修改用户组',
   storage_create: '创建存储策略',
+  storage_cors: '配置存储 CORS',
   user_disable: '禁用用户',
   user_ban: '封禁用户',
   user_unban: '解禁用户',

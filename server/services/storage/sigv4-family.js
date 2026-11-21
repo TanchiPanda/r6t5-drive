@@ -8,6 +8,7 @@ import { notFound, upstreamError, driverNotSupported } from '../../lib/errors.js
 import {
   signRequest, encodeKeyPath, encodeQueryValue, canonicalQuery,
 } from './sigv4.js';
+import { buildCorsXml } from './cors-xml.js';
 
 const TIMEOUT_MS = 15_000;
 
@@ -41,7 +42,7 @@ function specLabel(spec) { return spec.label; }
 function queryString(queryParams) {
   if (!queryParams) return '';
   const entries = Object.entries(queryParams)
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .filter(([, v]) => v !== undefined && v !== null)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   if (!entries.length) return '';
   return '?' + entries.map(([k, v]) => `${encodeQueryValue(k)}=${encodeQueryValue(String(v))}`).join('&');
@@ -309,6 +310,26 @@ export function makeSigv4Driver(spec) {
           details: { bucket: cfgOf(strategy, spec).bucket, latencyMs: Date.now() - started, status },
         };
       }
+    },
+
+    /**
+     * 一键写入 Bucket CORS：PUT /?cors（PutBucketCors，SigV4 变体兼容）。
+     * policy = { allowedOrigins[], allowedMethods[], allowedHeaders[], exposeHeaders[], maxAgeSeconds }
+     */
+    async putBucketCors(strategy, policy = {}) {
+      const cfg = cfgOf(strategy, spec);
+      const missing = spec.required.filter((f) => !cfg[f]);
+      if (missing.length) {
+        return { ok: false, message: `配置不完整，缺少：${missing.join(' / ')}` };
+      }
+      const xml = buildCorsXml(policy);
+      const res = await request(spec, cfg, 'PUT', '', {
+        query: { cors: '' },
+        bodyBuffer: Buffer.from(xml, 'utf8'),
+        extraHeaders: { 'Content-Type': 'application/xml' },
+        op: 'put-bucket-cors',
+      });
+      return { ok: true, message: `CORS 策略已写入 bucket「${cfg.bucket}」`, status: res.status };
     },
   };
 
