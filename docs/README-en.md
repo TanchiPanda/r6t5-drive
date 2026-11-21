@@ -1,17 +1,11 @@
-#R6T5 Drive
+# R6T5 Drive
 
-<P>
-
-<a href="https://github.com/TanchiPanda/r6t5-drive/stargazers" <img alt="stars" src="https://img.shi elds.io/github/stars/TanchiPanda/r6t5-drive? style=flat-square&color=63C08B"></a>
-
-<a href="https://github.com/TanchiPanda/r6t5-drive/commits/main"><img alt="commits" src="https://img .shields.io/github/commit-activity/t/TanchiPanda/r6t5-drive? style=flat-square&color=63C08B"></a>
-
-<a href="https://github.com/TanchiPanda/r6t5-drive/commits/main"><img alt="last commit" src="https:/ /img.shields.io/github/last-commit/TanchiPanda/r6t5-drive? style=flat-square&color=63C08B"></a>
-
-<a href="https://github.com/TanchiPanda/r6t5-drive/actions/workflows/docker.yml"><img alt="docker" s rc="https://github.com/TanchiPanda/r6t5-drive/actions/workflows/docker.yml/badge.svg"></a>
-
-<a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/TanchiPanda/r6t5-dri E? style=flat-square&color=63C08B"></a>
-
+<p>
+  <a href="https://github.com/TanchiPanda/r6t5-drive/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
+  <a href="https://github.com/TanchiPanda/r6t5-drive/commits/main"><img alt="commits" src="https://img.shields.io/github/commit-activity/t/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
+  <a href="https://github.com/TanchiPanda/r6t5-drive/commits/main"><img alt="last commit" src="https://img.shields.io/github/last-commit/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
+  <a href="https://github.com/TanchiPanda/r6t5-drive/actions/workflows/docker.yml"><img alt="docker" src="https://github.com/TanchiPanda/r6t5-drive/actions/workflows/docker.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
 </p>
 
 A private network disk that can be deployed by yourself: put files on your own server, support multi-person use, online preview and sharing. You don't need to buy cloud services, and a Docker container can run.
