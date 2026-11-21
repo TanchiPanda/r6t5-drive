@@ -6,72 +6,29 @@
   <a href="https://github.com/TanchiPanda/r6t5-drive/commits/main"><img alt="last commit" src="https://img.shields.io/github/last-commit/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
   <a href="https://github.com/TanchiPanda/r6t5-drive/actions/workflows/docker.yml"><img alt="docker" src="https://github.com/TanchiPanda/r6t5-drive/actions/workflows/docker.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/TanchiPanda/r6t5-drive?style=flat-square&color=63C08B"></a>
-  <img alt="version" src="https://img.shields.io/badge/version-20261120b-63C08B?style=flat-square">
 </p>
 
-Docker 自托管的轻量网盘：**一个容器跑一个站点，容器内提供多用户空间**。后端 Node.js + Express + SQLite，前端纯 HTML/CSS/JS（无构建步骤），文件元数据存本地 SQLite，物理存储可在本地数据卷、S3 兼容对象存储、只读 GitHub 仓库之间选择。
+一个可以自己部署的私人网盘：把文件放在自己的服务器上，支持多人使用、在线预览和分享。不需要买云服务，一个 Docker 容器就能跑起来。
 
+- 在线演示：https://r6t5-drive-preview.r6t5.dpdns.org
+- 源码仓库：https://github.com/TanchiPanda/r6t5-drive
+- 详细部署说明：[`docs/deploy.md`](docs/deploy.md)
 
-- 在线演示站：https://r6t5-drive-preview.r6t5.dpdns.org
-- 仓库：https://github.com/TanchiPanda/r6t5-drive
-- 接口契约：[`docs/api-contract.md`](docs/api-contract.md)
-- 部署说明：[`docs/deploy.md`](docs/deploy.md)
-- 实施计划：[`docs/plan.md`](docs/plan.md)
+## 你能做什么
 
-## 架构概览
+**日常使用**
+- 上传、下载、重命名、移动、删除文件，支持多选批量操作
+- 大文件分片上传，中途断线可以接着传，不用重来
+- 在线看图片、视频、音频、文本、Markdown 和 PDF
+- 打开 Office 文档时可以自己选阅读器（内置 PDF.js、Google Docs、Microsoft 365 等），选过一次后同类型文件会记住你的选择
+- 生成分享链接：可设有效期、提取码和下载次数限制
+- 删除的文件先进回收站，保留期内可以恢复，到期才彻底清除
 
-```
-                         浏览器
-                           │  HTTP
-                           ▼
-                ┌────────────────────────┐
-                │  Node.js + Express 容器 │
-                │  server/index.js 入口   │
-                ├────────────────────────┤
-                │  /api/*  接口路由       │
-                │  public/  静态页面与资源 │
-                ├──────────────┬─────────┤
-                │  SQLite 元数据 │ 文件存储层 │
-                │ data/r6t5.db │ 三类策略   │
-                └──────────────┴─────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                    ▼
-  本地数据卷 volume   S3 兼容存储 s3        GitHub 仓库只读 github
-  data/volume/uploads/<8位索引>/<文件名>  七牛/OSS/COS/OBS/KS3/…  适配器预留（P2）
-
-账号：数据卷本地账号（scrypt 密码，管理员在后台建号/改密/封禁；
-     已不支持 Supabase 托管账号）。
-```
-
-## 目录结构
-
-```
-r6t5-drive/
-├── index.html              介绍页（站点首页）
-├── Dockerfile              生产镜像定义
-├── docker-compose.yml      编排（含可选侧车注释开关）
-├── .env.example            环境变量样例
-├── package.json            后端依赖清单
-├── server/                 后端入口与路由（Express）
-│   ├── index.js            进程入口：迁移 + 启动 + 打印首次管理密码
-│   ├── app.js              Express 装配
-│   ├── config.js           环境变量与站点设置读写
-│   ├── db.js               better-sqlite3 连接与迁移
-│   ├── schema.sql          DDL
-│   ├── lib/                错误、路径、会话、格式化等基础库
-│   ├── middleware/         鉴权中间件
-│   ├── routes/             /api 各业务路由
-│   └── services/           账号、配额、流量、审计、节点、Blob 与存储适配器
-├── public/                 前端静态页与资源（无构建）
-│   ├── *.html              登录、文件、账户、分享、管理后台页面骨架
-│   └── assets/             样式与前端脚本
-├── tools/                  开发期工具（如契约假后端 mock-api.js）
-├── docs/                   文档：API 契约、部署说明、实施计划
-└── data/                   运行期数据（不入库，见 .gitignore）
-    ├── r6t5.db             SQLite 元数据库
-    └── volume/             本地卷存储根目录
-```
+**管理员**
+- 新建用户、改密码、封禁账号；按用户组分配空间大小、单个文件上限和每周上传流量
+- 可以让访客自己注册账号，也可以关掉注册
+- 同一个站点里的不同目录，可以存在不同的存储位置（见下文）
+- 操作记录（审计日志）可查
 
 ## 快速开始
 
@@ -79,106 +36,76 @@ r6t5-drive/
 
 ```bash
 cp .env.example .env
-# 编辑 .env：至少生成并填入 SESSION_SECRET（openssl rand -hex 32）
+```
+
+打开 `.env`，至少把 `SESSION_SECRET` 换成一串随机字符（可用 `openssl rand -hex 32` 生成），然后：
+
+```bash
 docker compose up -d
 ```
 
-启动后访问 `http://<主机>:5212`。Windows 下用 PowerShell 而不是 `$(...)`：
+启动后在浏览器打开 `http://服务器地址:5212` 即可。
+
+Windows PowerShell 下也可以直接用：
 
 ```powershell
 New-Item -ItemType Directory -Force -Path .\data | Out-Null
 docker run -d --name r6t5-drive -p 5212:5212 -v "${PWD}\data:/app/data" ghcr.io/tanchipanda/r6t5-drive:latest
 ```
 
-容器数据落在 `./data` 目录，升级与备份见 [`docs/deploy.md`](docs/deploy.md)。
+所有数据都保存在 `./data` 目录，备份和升级方法见 [`docs/deploy.md`](docs/deploy.md)。
 
-### 方式二：本机直接运行（不用 Docker）
+### 方式二：直接运行（不用 Docker）
+
+需要 Node.js 20 或更高版本：
 
 ```bash
 npm install
-npm start          # 等价于 node server/index.js
+npm start
 ```
 
-> 前置条件：Node.js ≥ 20。`better-sqlite3` 在 glibc 环境使用预编译包；若需从源码编译，需准备 `python3`、`make`、`g++`。
+## 第一次使用
 
-## 首次启动五步引导
+1. 启动后，管理员密码默认自动生成一次，打印在服务端日志里，找出来登录；也可以在 `.env` 的 `ADMIN_PASSWORD` 里自己指定。
+2. 登录管理后台后，按页面提示依次完成：
+   - 选一个存储位置（本地文件夹 / S3 兼容存储 / 只读 GitHub 仓库）
+   - 建至少一个用户组并设好限额
+   - 填好站点名称和对外访问地址
+3. 全部完成后，普通用户就能用邮箱注册或管理员建号登录了。
 
-登录页只读取 `/api/setup/status`，**只向当前最高优先级的一项**给出提示，按顺序完成：
+## 文件存在哪里
 
-| 步骤 | 状态项 | 要做的事 |
+文件内容不一定放在本地，可以在后台选择，三类存储可以混用：
+
+| 类型 | 能不能上传 | 适用场景 |
 |---|---|---|
-| 1 | `storage` | 添加一条可用的存储策略（本地卷 / S3 兼容 / GitHub 只读） |
-| 2 | `groups` | 创建除默认组外至少 1 个用户组（共满 2 个可用组），配置空间 / 单文件 / 7 天流量上限 |
-| 3 | `site` | 补全站点名、对外地址、默认用户组 |
-| 4 | `ready` | 全部通过，普通用户即可用邮箱登录 |
+| 本地文件夹 | 能 | 最简单，文件就在服务器的数据目录里 |
+| S3 兼容存储 | 能 | 兼容 MinIO、Cloudflare R2、阿里云 OSS、腾讯云 COS、华为云 OBS 等 |
+| GitHub 仓库 | 只能下载 | 把公开仓库里的文件挂出来给人看 |
 
-首次管理密码：`.env` 中 `ADMIN_PASSWORD` 留空时，首次启动自动生成并打印到服务端日志；填写则以环境变量为准。
+管理员可以把某个目录（或某个用户）指定到某一类存储上；只读存储里不能上传、改名或删除。
 
-## 用户目录约定
+> 在线打开 Google Docs、Microsoft 365 这类外部阅读器时，需要站点有公网可访问的地址，文件链接只会短期有效（10 分钟）。
 
-每个用户的物理与逻辑路径都以 **Email** 明示，路径首段必须是本人邮箱，越权访问返回 403：
+## 常见问题
 
-- 逻辑路径：`alice@example.com/inbox/report.pdf`
-- 物理路径：`<STORAGE_ROOT>/alice@example.com/inbox/report.pdf`（默认 `data/volume/alice@example.com/inbox/report.pdf`）
+**数据会丢吗？** 所有内容都在你自己的 `./data` 目录里，定时备份这个目录即可，详见部署文档。
 
-目录分隔符固定 `/`，禁止 `..`、空段与绝对路径穿越。
+**回收站里的文件去哪了？** 默认保留 30 天（可在 `.env` 的 `TRASH_RETENTION_DAYS` 修改），到期自动彻底删除。
 
-## 存储策略
+**怎么升级？** 拉取新镜像后重启容器，数据目录不动即可，数据库会自动更新结构。
 
-| 类型 | 能力 | 状态 | 说明 |
-|---|---|---|---|
-| 本地数据卷 `volume` | 读写 | P1 已实现 | 直接读写容器挂载的数据目录 |
-| S3 兼容 `s3` | 读写 | P2 已实现 | 自研 SigV4（不引 SDK），流式上传下载；支持自定义 endpoint / region / bucket / pathStyle / prefix，兼容 MinIO、R2、OSS、COS、OBS 等 |
-| GitHub 仓库 `github` | 只读 | P2 已实现 | Contents API 列目录 + raw 流式下载；写操作一律 `403 strategy_readonly` |
+## 给开发者
 
-**目录绑定**（P2）：管理员可把某个目录（站点级或指定用户）绑定到任一策略，解析顺序为「最深匹配的绑定 → 用户组默认策略 → 站点默认策略 → 本地卷」。文件页会显示当前目录落在哪个策略上；只读策略下上传、改名、移动、删除都会被拦成 `403 strategy_readonly`。
-
-**创建前披露**：添加策略前，后台会明确告知哪些字段会展示给普通用户——策略名、存储类型、位置/区域、容量、是否只读；密钥、端点、凭证等字段只保存在服务端，任何接口都不下发明文。创建时需勾选披露确认，否则后端返回 `not_acknowledged`。
-
-## API 摘要
-
-完整字段、错误码与状态机以 [`docs/api-contract.md`](docs/api-contract.md) 为准。
-
-| 分组 | 代表接口 | 说明 |
-|---|---|---|
-| 身份鉴权 | `POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/me` | 本地密码校验后写 httpOnly 会话 Cookie；`DEV_AUTH=1` 时方可使用 dev 登录 |
-| 初始化状态 | `GET /api/setup/status` | 登录页唯一引导来源，返回当前最高优先级待办 |
-| 管理端 | `/api/admin/supabase`、`/api/admin/overview`、`/api/admin/groups`、`/api/admin/storage`、`/api/admin/bindings`、`/api/admin/users`、`/api/admin/settings`、`/api/admin/audit`、`/api/admin/trash` | 管理员会话守卫；密钥类配置永不回明文 |
-| 用户端文件 | `GET /api/files`、`POST /api/files/folder`、`POST /api/files/upload`、`GET /api/files/download`、重命名 / 移动 / 删除 / 搜索 | 先校验后落盘；配额拦截顺序：单文件上限 → 空间剩余 → 7 天上传流量 |
-| 回收站 | `GET /api/trash`、`POST /api/trash/restore`、`DELETE /api/trash` | 软删保留 `TRASH_RETENTION_DAYS`（默认 30）天 |
-| 分享 | `GET /api/shares`、`POST /api/shares`、`GET /api/share/:token` | 见 `docs/api-contract.md` 的 P3 段 |
-
-## 版本进度
-
-- **P0（已完成）**：仓库骨架、介绍页、文档与接口契约冻结。
-- **P1（本轮）**：后端骨架与启动流程、登录引导状态机、管理端概览、上传 / 列表 / 下载 / 删除、配额与流量拦截、回收站软删与恢复、本地卷存储策略。
-- **P2（已完成）**：S3 / GitHub 存储适配器、目录绑定与解析、管理端「文件系统」页（类型化表单 + 测试连接 + 健康状态）、密钥脱敏。
-- **P3（已完成）**：分享（有效期 / 提取码 / 下载次数 / 目录分享）与在线预览（图片 / 视频 Range / 文本 / Markdown / PDF）。
-- **P4（已完成）**：分片上传与断点续传（并发分片、断点续传、自动补齐）、流式打包下载、在线压缩 / 解压（防 zip slip），文件页多选批量操作与上传进度 UI。
-- **P5（后端完成，前端部分待做）**：WebDAV（最小可用集）、应用密码、aria2 离线下载（可选）、OnlyOffice 只读预览（可选）、媒体元数据；PWA 与 i18n 未实现。
-- **已下线 Supabase**：账号统一为数据卷本地账号（scrypt），管理员可建号/改密/封禁/删号。
-- **P7（本轮）**：用户组级自助注册（`allow_self_signup`）、sudo 用户组（成员免管理密码进控制台）、配额单位 MB→EB（BigInt 精确换算）、版本发布流程（`VERSION` + `latest.json` + `tools/release.mjs` + 控制台更新提示）。
-
-## 验证
-
-接口与页面的实测记录在 [`docs/verify.md`](docs/verify.md)，截图在 [`docs/screenshots/`](docs/screenshots/)。两个可复现脚本：
-
-```bash
-# 28 项接口自检（需先启动服务）
-BASE=http://127.0.0.1:8099 node tools/smoke-test.mjs
-
-# 页面截图 + 前端断言（需要 puppeteer-core）
-PUPPETEER_DIR=<含 puppeteer-core 的目录> BASE=http://127.0.0.1:8099 ADMIN_PASSWORD=<管理密码> node tools/capture.mjs
-```
-
-> 说明：沙箱环境没有 Docker，因此 `docker compose up` 未实跑；登录与文件链路以单进程实例验收，口径见 `docs/verify.md`。
+- 后端 Node.js + Express + SQLite，前端是纯 HTML/CSS/JS，不需要打包构建
+- 接口字段与错误码见 [`docs/api-contract.md`](docs/api-contract.md)
+- 功能规划见 [`docs/plan.md`](docs/plan.md)，实测记录见 [`docs/verify.md`](docs/verify.md)
 
 ## 许可
 
-- 本项目自身代码：[MIT](LICENSE)（Copyright © 2026 TanchiPanda）
-- 随项目分发的依赖、以及计划接入的预览组件（pdf.js / Monaco / epub.js / Artplayer / Excalidraw / draw.io / Photopea / Google Docs Viewer / Microsoft Office 预览 / 7-Zip）的许可与使用边界，统一登记在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-- 引入新的第三方组件时，请同步在该文件登记；商用嵌入第三方在线服务前，先确认其条款允许（详见该文件第二节）。
+- 本项目代码以 [MIT](LICENSE) 协议发布（Copyright © 2026 TanchiPanda）
+- 项目附带的第三方组件（pdf.js、Monaco、epub.js 等）许可清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；接入新组件时请同步登记
 
 ## 合规声明
 
-本项目功能思路参考了同类开源产品的常见做法，但**代码与界面全部自研**，未复制、未使用任何 GPL 或其它传染性许可证下的源码；运行时依赖均为 MIT / ISC / BSD 等宽松许可。
+本项目参考了同类网盘产品的常见使用方式，但代码与界面全部自研，未复制任何传染性许可（GPL 等）下的源码；运行时依赖均为 MIT / ISC / BSD 等宽松许可。
